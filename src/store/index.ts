@@ -4,14 +4,14 @@ import type { Player, CustomEvent, GameSnapshot, GameHistory, SavedPlayer } from
 
 const loadLocal = (key: string) => {
   const saved = localStorage.getItem(key);
-  return saved ? JSON.parse(saved) :[];
+  return saved ? JSON.parse(saved) : [];
 };
 
 function shuffleArray<T>(array: T[]): T[] {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] =[arr[j], arr[i]];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
 }
@@ -24,6 +24,9 @@ export const gameStore = reactive({
   customEvents: loadLocal('bilscore_events') as CustomEvent[],
   history: loadLocal('bilscore_history') as GameHistory[],
   savedPlayers: loadLocal('bilscore_players') as SavedPlayer[],
+  
+  // 修复：补回历史快照属性
+  historySnapshots: [] as GameSnapshot[],
 
   // --- 玩家库管理 ---
   addSavedPlayer(player: SavedPlayer) {
@@ -38,7 +41,7 @@ export const gameStore = reactive({
   // --- 事件管理 ---
   addEvent(event: CustomEvent) { this.customEvents.push(event); localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); },
   deleteEvent(id: string) { this.customEvents = this.customEvents.filter((e: CustomEvent) => e.id !== id); localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); },
-
+  
   _autoSaveToHistory() {
     if (!this.currentGameId) return;
     const record: GameHistory = { id: this.currentGameId, lastEdited: Date.now(), round: this.currentRound, players: JSON.parse(JSON.stringify(this.currentPlayers)) };
@@ -52,7 +55,7 @@ export const gameStore = reactive({
   initNewGame(selectedPlayers: SavedPlayer[]) {
     this.currentGameId = `game_${Date.now()}`;
     this.currentRound = 1;
-    this.historySnapshots =[];
+    this.historySnapshots = [];
     this.currentPlayers = selectedPlayers.map(sp => ({ ...sp, score: 0, triggeredEvents: {} }));
     this._autoSaveToHistory();
   },
@@ -61,11 +64,11 @@ export const gameStore = reactive({
     const record = this.history.find((h: GameHistory) => h.id === id);
     if (record) {
       this.currentGameId = record.id; this.currentRound = record.round; this.currentPlayers = JSON.parse(JSON.stringify(record.players));
-      this.historySnapshots =[]; this._autoSaveToHistory();
+      this.historySnapshots = []; this._autoSaveToHistory();
     }
   },
 
-  endAndSaveGame() { this._autoSaveToHistory(); this.historySnapshots =[]; this.currentGameId = null; },
+  endAndSaveGame() { this._autoSaveToHistory(); this.historySnapshots = []; this.currentGameId = null; },
   
   saveSnapshot() { 
     this.historySnapshots.push({ players: JSON.parse(JSON.stringify(this.currentPlayers)), round: this.currentRound }); 
@@ -79,10 +82,8 @@ export const gameStore = reactive({
   },
 
   // --- 局内玩家逻辑 ---
-  
-  // 修复：添加专门修改分数的方法 (局内不改名)
   updatePlayerScore(playerId: string, newScore: number) {
-    this.saveSnapshot(); // 修改前存快照
+    this.saveSnapshot(); 
     const player = this.currentPlayers.find(p => p.id === playerId);
     if (player) {
       player.score = newScore;
@@ -113,7 +114,7 @@ export const gameStore = reactive({
 
   applyCustomOrder(orderedIds: string[]) {
     this.saveSnapshot();
-    const newPlayersList: Player[] =[];
+    const newPlayersList: Player[] = [];
     orderedIds.forEach(id => { const p = this.currentPlayers.find(p => p.id === id); if (p) newPlayersList.push(p); });
     this.currentPlayers = newPlayersList; this._autoSaveToHistory();
   },
@@ -156,12 +157,12 @@ export const gameStore = reactive({
       const winner = this.currentPlayers[winnerIndex];
       const loser = this.currentPlayers[loserIndex];
       const remaining = this.currentPlayers.filter((_, idx) => idx !== winnerIndex && idx !== loserIndex);
-      const newOrder: Player[] =[winner, loser];
+      const newOrder: Player[] = [winner, loser];
 
       if (N === 4) {
         const oldIdx0 = this.currentPlayers.indexOf(remaining[0]);
         const oldIdx1 = this.currentPlayers.indexOf(remaining[1]);
-        const validPermutations =[];
+        const validPermutations = [];
         if (oldIdx0 !== 2 && oldIdx1 !== 3) validPermutations.push([remaining[0], remaining[1]]);
         if (oldIdx1 !== 2 && oldIdx0 !== 3) validPermutations.push([remaining[1], remaining[0]]);
         if (validPermutations.length > 0) newOrder.push(...validPermutations[Math.floor(Math.random() * validPermutations.length)]);

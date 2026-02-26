@@ -2,6 +2,8 @@
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { gameStore } from '../store';
+import { getRandomColor } from '../utils/avatar';
+import type { SavedPlayer } from '../types';
 
 const route = useRoute();
 const router = useRouter();
@@ -13,26 +15,36 @@ const currentStep = ref(1);
 const currentNameInput = ref('');
 const collectedNames = ref<string[]>([]);
 
-const title = computed(() => `Player ${currentStep.value} Name`);
+const title = computed(() => `输入第 ${currentStep.value} 位玩家名称`);
 
 const nextStep = () => {
   // 如果没有输入，给个默认名
-  const name = currentNameInput.value.trim() || `Player ${currentStep.value}`;
+  const name = currentNameInput.value.trim() || `玩家 ${currentStep.value}`;
   collectedNames.value.push(name);
   currentNameInput.value = ''; // 清空输入框
 
   if (currentStep.value < targetCount) {
     currentStep.value++;
   } else {
-    // 名字收集完毕，存入 Store，进入游戏
-    gameStore.initNewGame(collectedNames.value);
-    router.replace('/game'); // 使用 replace 防止用户点返回又回到输入名字的最后一步
+    // 修复：将收集到的字符串名字转换为 SavedPlayer 对象
+    const players: SavedPlayer[] = collectedNames.value.map((n, index) => ({
+      id: `temp_${Date.now()}_${index}`,
+      name: n,
+      avatarColor: getRandomColor()
+    }));
+
+    gameStore.initNewGame(players);
+    router.replace('/game'); 
   }
 };
 </script>
 
 <template>
   <div class="page-container">
+    <div class="top-bar">
+        <button class="icon-btn" @click="router.back()">返回</button>
+    </div>
+    
     <div class="progress">
       Step {{ currentStep }} / {{ targetCount }}
     </div>
@@ -42,30 +54,24 @@ const nextStep = () => {
       <input 
         type="text" 
         v-model="currentNameInput" 
-        :placeholder="'Enter name for player ' + currentStep"
+        :placeholder="'请输入玩家 ' + currentStep + ' 名称'"
         @keyup.enter="nextStep"
         autofocus
       />
     </div>
 
-    <button class="btn btn-next" @click="nextStep">
-      {{ currentStep === targetCount ? 'START GAME' : 'NEXT' }}
+    <button class="btn btn-primary btn-next" @click="nextStep">
+      {{ currentStep === targetCount ? '开始比赛' : '下一位' }}
     </button>
   </div>
 </template>
 
 <style scoped>
-.page-container {
-  height: 100vh;
-  padding: 40px 20px;
-  display: flex;
-  flex-direction: column;
-}
-
 .progress {
   text-align: right;
-  color: #718093;
+  color: var(--text-muted);
   font-weight: bold;
+  margin-bottom: 20px;
 }
 
 .input-area {
@@ -77,22 +83,17 @@ const nextStep = () => {
   gap: 20px;
 }
 
+h2 { color: var(--text-main); }
+
 input {
-  width: 100%;
-  padding: 20px;
-  font-size: 20px;
-  border: 2px solid #dcdde1;
-  border-radius: 12px;
-  outline: none;
   text-align: center;
-}
-input:focus {
-  border-color: #00a8ff;
+  font-size: 20px;
 }
 
 .btn-next {
   width: 100%;
   height: 60px;
   margin-bottom: 20px;
+  font-size: 18px;
 }
 </style>
