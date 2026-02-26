@@ -24,7 +24,6 @@ const loadEvents = (): CustomEvent[] => {
     if (!existing) {
       events.push({ ...builtin });
     } else {
-      // 如果存在，只允许保留用户修改过的 score，其余属性强制覆盖为默认
       existing.name = builtin.name;
       existing.targetType = builtin.targetType;
       existing.isNextRound = builtin.isNextRound;
@@ -56,7 +55,10 @@ export const gameStore = reactive({
   customEvents: loadEvents(),
   history: loadLocal('bilscore_history') as GameHistory[],
   savedPlayers: loadLocal('bilscore_players') as SavedPlayer[],
+  
+  historySnapshots: [] as GameSnapshot[],
 
+  // --- 玩家库管理 ---
   addSavedPlayer(player: SavedPlayer) {
     this.savedPlayers.push(player);
     localStorage.setItem('bilscore_players', JSON.stringify(this.savedPlayers));
@@ -66,14 +68,14 @@ export const gameStore = reactive({
     localStorage.setItem('bilscore_players', JSON.stringify(this.savedPlayers));
   },
 
-  addEvent(event: CustomEvent) { 
-    this.customEvents.push(event); 
-    this.saveEvents(); 
-  },
+  // --- 事件管理 ---
+  addEvent(event: CustomEvent) { this.customEvents.push(event); this.saveEvents(); },
   deleteEvent(id: string) { 
     this.customEvents = this.customEvents.filter((e: CustomEvent) => e.id !== id || e.isBuiltIn); 
     this.saveEvents(); 
   },
+  
+  // 【修复】Personal版本特有的：更新规则分数的方法
   updateEventScore(id: string, newScore: number) {
     const ev = this.customEvents.find(e => e.id === id);
     if (ev) {
@@ -81,10 +83,11 @@ export const gameStore = reactive({
       this.saveEvents();
     }
   },
+
   saveEvents() { 
     localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); 
   },
-
+  
   _autoSaveToHistory() {
     if (!this.currentGameId) return;
     const record: GameHistory = { id: this.currentGameId, lastEdited: Date.now(), round: this.currentRound, players: JSON.parse(JSON.stringify(this.currentPlayers)) };
@@ -112,7 +115,11 @@ export const gameStore = reactive({
   },
 
   endAndSaveGame() { this._autoSaveToHistory(); this.historySnapshots = []; this.currentGameId = null; },
-  saveSnapshot() { this.historySnapshots.push({ players: JSON.parse(JSON.stringify(this.currentPlayers)), round: this.currentRound }); },
+  
+  saveSnapshot() { 
+    this.historySnapshots.push({ players: JSON.parse(JSON.stringify(this.currentPlayers)), round: this.currentRound }); 
+  },
+  
   undoLastAction() {
     if (this.historySnapshots.length > 0) {
       const lastState = this.historySnapshots.pop()!;
@@ -120,6 +127,7 @@ export const gameStore = reactive({
     }
   },
 
+  // --- 局内玩家逻辑 ---
   updatePlayerScore(playerId: string, newScore: number) {
     this.saveSnapshot(); 
     const player = this.currentPlayers.find(p => p.id === playerId);
