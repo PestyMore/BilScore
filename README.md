@@ -1,7 +1,104 @@
-# Tauri + Vue + TypeScript
+# 🎱 BilScore - 专业的台球追分计分器
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+**BilScore** 是一款基于 **Tauri 2.0** + **Vue 3** 构建的现代化移动端台球计分应用。
 
-## Recommended IDE Setup
+![Tauri](https://img.shields.io/badge/Tauri-v2.0-24C8DB?style=flat&logo=tauri)
+![Vue](https://img.shields.io/badge/Vue.js-v3.0-4FC08D?style=flat&logo=vue.js)
+![TypeScript](https://img.shields.io/badge/TypeScript-v5.0-3178C6?style=flat&logo=typescript)
+![Android](https://img.shields.io/badge/Platform-Android-3DDC84?style=flat&logo=android)
 
-- [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+---
+
+## ✨ 核心功能
+
+*   **👥 智能玩家管理**
+    *   **玩家库系统**：一次录入，永久保存。支持自定义添加、删除。
+    *   **智能头像**：根据玩家姓名自动生成类似 iOS 通讯录的文字头像，并分配随机高亮背景色。
+*   **🎮 强大的对局控制**
+    *   **灵活人数**：支持 2-8 人同局追分。
+    *   **中途调整**：对局中可随时**添加新玩家**、**移除玩家**或**换人（替补）**，分数无缝继承。
+    *   **自定义排序**：支持拖拽或点选方式重新排列玩家击球顺序。
+    *   **时光倒流**：全操作支持 **Undo (撤销)**，误触无压力。
+*   **🎨 极致 UI/UX**
+    *   **玻璃态设计**：暗黑/磨砂质感界面，高端大气。
+    *   **主题切换**：支持 **深色 (Dark)** / **浅色 (Light)** 模式一键切换。
+    *   **原生交互**：底部抽屉 (Bottom Sheet) 菜单，流畅的过渡动画。
+*   **📊 数据持久化**
+    *   **断点续玩**：意外退出或杀后台，重进可直接恢复当前对局。
+    *   **历史记录**：自动保存最近 10 场对局记录，展示赢家与轮次。
+
+---
+
+## 🆚 版本说明 (Public vs Personal)
+
+本项目分为两个主要分支版本，分别适用于不同的使用场景：
+
+### 🌐 Public (通用版)
+*   **分支**：`main`
+*   **特点**：高度自由，**无预设规则**。
+*   **适用场景**：适用于任何需要计分的场景，或者规则不固定的台球局。
+*   **事件系统**：
+    *   用户需手动创建事件（如：“大金”、“犯规”）。
+    *   可自定义事件名称、分值、结算对象（吃上家/给下家/吃所有/给自定义等）。
+    *   所有事件均可删除或修改。
+
+### 🔒 Personal (个人/固定规则版)
+*   **分支**：`personal`
+*   **特点**：内置**硬编码的追分规则**，专为特定的“追分”玩法定制。
+*   **UI 差异**：
+    *   **事件分组**：在对局面板中，**🟩得分事件**（绿色）与 **🟥赔分事件**（红色）自动分区分组，操作效率极高。
+    *   **防误触**：内置规则不可删除，不可修改名称和结算逻辑（但支持微调分数）。
+*   **默认规则**：包含以下 8 种不可变事件。
+
+#### 🎱 Personal 版本默认规则表
+
+| 事件名称 | 结算逻辑 (Target) | 默认分数 | 换轮 (Next Round) | 说明 |
+| :--- | :--- | :---: | :---: | :--- |
+| **大金** | 吃所有人分 (Take All) | **+10** | ✅ 是 | 炸清/接清，赢家做庄 |
+| **大金犯规** | 给所有人分 (Give All) | **10** | ✅ 是 | 开球未进/犯规，输家下台 |
+| **小金** | 吃所有人分 (Take All) | **+7** | ✅ 是 | 普通炸/接，赢家做庄 |
+| **小金犯规** | 给所有人分 (Give All) | **7** | ✅ 是 | 关键球失误，输家下台 |
+| **普胜** | 吃上家分 (Take Prev) | **+4** | ✅ 是 | 普通胜局，赢家做庄 |
+| **普胜犯规** | 给上家分 (Give Prev) | **4** | ✅ 是 | 普通输局，输家下台 |
+| **犯规** | 给上家分 (Give Prev) | **1** | ❌ 否 | 局中犯规，不换轮次 |
+| **让杆** | 给自定义对象 (Give Custom) | **1** | ❌ 否 | 指定给某人加分，不换轮次 |
+
+---
+
+## 🚀 开发与构建
+
+### 环境要求
+*   Node.js (v18+)
+*   Rust (Latest Stable)
+*   Android Studio & SDK (with NDK)
+
+### 常用命令
+
+1.  **安装依赖**
+    ```bash
+    npm install
+    ```
+
+2.  **启动开发环境 (连接安卓虚拟机)**
+    ```bash
+    npm run tauri android dev
+    ```
+
+3.  **构建正式版 APK**
+    此命令使用项目内的 `bilscore.jks` 密钥进行签名，生成的 APK 可直接分发并覆盖安装。
+    ```bash
+    npm run tauri android build
+    ```
+    *产物路径: `src-tauri/gen/android/app/build/outputs/apk/universal/release/`*
+
+---
+
+## 🛠️ 架构设计
+
+*   **Store (State Management)**: 使用 Vue 3 `reactive` 构建轻量级状态管理，处理复杂的台球轮次逻辑、洗牌算法及历史回溯（Snapshot）。
+*   **Router**: 使用 `vue-router` 管理页面跳转（向导式流程）。
+*   **Auto-Save**: 任何状态变更（计分、改名、换人）均自动触发本地存储同步，确保数据零丢失。
+
+---
+
+**Enjoy the game! 🎱**
