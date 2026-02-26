@@ -8,9 +8,9 @@ export interface CustomEvent {
   targetType: TargetType;
   score: number;
   isNextRound: boolean;
+  isBuiltIn?: boolean; // 新增：标记是否为内置不可删除事件
 }
 
-// --- 新增：保存的玩家信息库 ---
 export interface SavedPlayer {
   id: string;
   name: string;

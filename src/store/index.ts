@@ -2,16 +2,48 @@
 import { reactive } from 'vue';
 import type { Player, CustomEvent, GameSnapshot, GameHistory, SavedPlayer } from '../types';
 
+// 定义硬编码的个人台球规则事件
+const BUILT_IN_EVENTS: CustomEvent[] = [
+  { id: 'b_dajin', name: '大金', targetType: 'take_all', score: 10, isNextRound: true, isBuiltIn: true },
+  { id: 'b_dajinfoul', name: '大金犯规', targetType: 'give_all', score: 10, isNextRound: true, isBuiltIn: true },
+  { id: 'b_xiaojin', name: '小金', targetType: 'take_all', score: 7, isNextRound: true, isBuiltIn: true },
+  { id: 'b_xiaojinfoul', name: '小金犯规', targetType: 'give_all', score: 7, isNextRound: true, isBuiltIn: true },
+  { id: 'b_pusheng', name: '普胜', targetType: 'take_prev', score: 4, isNextRound: true, isBuiltIn: true },
+  { id: 'b_pushengfoul', name: '普胜犯规', targetType: 'give_prev', score: 4, isNextRound: true, isBuiltIn: true },
+  { id: 'b_foul', name: '犯规', targetType: 'give_prev', score: 1, isNextRound: false, isBuiltIn: true },
+  { id: 'b_ranggan', name: '让杆', targetType: 'give_custom', score: 1, isNextRound: false, isBuiltIn: true },
+];
+
+const loadEvents = (): CustomEvent[] => {
+  const saved = localStorage.getItem('bilscore_events');
+  let events: CustomEvent[] = saved ? JSON.parse(saved) : [];
+  
+  // 确保所有内置事件都存在，且核心规则不被篡改
+  BUILT_IN_EVENTS.forEach(builtin => {
+    const existing = events.find(e => e.id === builtin.id);
+    if (!existing) {
+      events.push({ ...builtin });
+    } else {
+      // 如果存在，只允许保留用户修改过的 score，其余属性强制覆盖为默认
+      existing.name = builtin.name;
+      existing.targetType = builtin.targetType;
+      existing.isNextRound = builtin.isNextRound;
+      existing.isBuiltIn = true;
+    }
+  });
+  return events;
+};
+
 const loadLocal = (key: string) => {
   const saved = localStorage.getItem(key);
-  return saved ? JSON.parse(saved) :[];
+  return saved ? JSON.parse(saved) : [];
 };
 
 function shuffleArray<T>(array: T[]): T[] {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] =[arr[j], arr[i]];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
 }
@@ -21,11 +53,10 @@ export const gameStore = reactive({
   currentPlayers: [] as Player[],
   currentRound: 1,
   
-  customEvents: loadLocal('bilscore_events') as CustomEvent[],
+  customEvents: loadEvents(),
   history: loadLocal('bilscore_history') as GameHistory[],
   savedPlayers: loadLocal('bilscore_players') as SavedPlayer[],
 
-  // --- 玩家库管理 ---
   addSavedPlayer(player: SavedPlayer) {
     this.savedPlayers.push(player);
     localStorage.setItem('bilscore_players', JSON.stringify(this.savedPlayers));
@@ -35,9 +66,24 @@ export const gameStore = reactive({
     localStorage.setItem('bilscore_players', JSON.stringify(this.savedPlayers));
   },
 
-  // --- 事件管理 ---
-  addEvent(event: CustomEvent) { this.customEvents.push(event); localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); },
-  deleteEvent(id: string) { this.customEvents = this.customEvents.filter((e: CustomEvent) => e.id !== id); localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); },
+  addEvent(event: CustomEvent) { 
+    this.customEvents.push(event); 
+    this.saveEvents(); 
+  },
+  deleteEvent(id: string) { 
+    this.customEvents = this.customEvents.filter((e: CustomEvent) => e.id !== id || e.isBuiltIn); 
+    this.saveEvents(); 
+  },
+  updateEventScore(id: string, newScore: number) {
+    const ev = this.customEvents.find(e => e.id === id);
+    if (ev) {
+      ev.score = newScore;
+      this.saveEvents();
+    }
+  },
+  saveEvents() { 
+    localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); 
+  },
 
   _autoSaveToHistory() {
     if (!this.currentGameId) return;
@@ -52,7 +98,7 @@ export const gameStore = reactive({
   initNewGame(selectedPlayers: SavedPlayer[]) {
     this.currentGameId = `game_${Date.now()}`;
     this.currentRound = 1;
-    this.historySnapshots =[];
+    this.historySnapshots = [];
     this.currentPlayers = selectedPlayers.map(sp => ({ ...sp, score: 0, triggeredEvents: {} }));
     this._autoSaveToHistory();
   },
@@ -61,16 +107,12 @@ export const gameStore = reactive({
     const record = this.history.find((h: GameHistory) => h.id === id);
     if (record) {
       this.currentGameId = record.id; this.currentRound = record.round; this.currentPlayers = JSON.parse(JSON.stringify(record.players));
-      this.historySnapshots =[]; this._autoSaveToHistory();
+      this.historySnapshots = []; this._autoSaveToHistory();
     }
   },
 
-  endAndSaveGame() { this._autoSaveToHistory(); this.historySnapshots =[]; this.currentGameId = null; },
-  
-  saveSnapshot() { 
-    this.historySnapshots.push({ players: JSON.parse(JSON.stringify(this.currentPlayers)), round: this.currentRound }); 
-  },
-  
+  endAndSaveGame() { this._autoSaveToHistory(); this.historySnapshots = []; this.currentGameId = null; },
+  saveSnapshot() { this.historySnapshots.push({ players: JSON.parse(JSON.stringify(this.currentPlayers)), round: this.currentRound }); },
   undoLastAction() {
     if (this.historySnapshots.length > 0) {
       const lastState = this.historySnapshots.pop()!;
@@ -78,25 +120,16 @@ export const gameStore = reactive({
     }
   },
 
-  // --- 局内玩家逻辑 ---
-  
-  // 修复：添加专门修改分数的方法 (局内不改名)
   updatePlayerScore(playerId: string, newScore: number) {
-    this.saveSnapshot(); // 修改前存快照
+    this.saveSnapshot(); 
     const player = this.currentPlayers.find(p => p.id === playerId);
-    if (player) {
-      player.score = newScore;
-      this._autoSaveToHistory();
-    }
+    if (player) { player.score = newScore; this._autoSaveToHistory(); }
   },
 
   replacePlayer(oldPlayerId: string, newSavedPlayer: SavedPlayer) {
     this.saveSnapshot();
     const player = this.currentPlayers.find(p => p.id === oldPlayerId);
-    if (player) {
-      player.id = newSavedPlayer.id; player.name = newSavedPlayer.name; player.avatarColor = newSavedPlayer.avatarColor;
-      this._autoSaveToHistory();
-    }
+    if (player) { player.id = newSavedPlayer.id; player.name = newSavedPlayer.name; player.avatarColor = newSavedPlayer.avatarColor; this._autoSaveToHistory(); }
   },
   
   addPlayerMidGame(newSavedPlayer: SavedPlayer) {
@@ -113,12 +146,11 @@ export const gameStore = reactive({
 
   applyCustomOrder(orderedIds: string[]) {
     this.saveSnapshot();
-    const newPlayersList: Player[] =[];
+    const newPlayersList: Player[] = [];
     orderedIds.forEach(id => { const p = this.currentPlayers.find(p => p.id === id); if (p) newPlayersList.push(p); });
     this.currentPlayers = newPlayersList; this._autoSaveToHistory();
   },
 
-  // 触发事件
   triggerEvent(playerIndex: number, eventId: string, targetIndex?: number) {
     const event = this.customEvents.find((e: CustomEvent) => e.id === eventId);
     if (!event) return;
@@ -135,12 +167,8 @@ export const gameStore = reactive({
       case 'take_prev': triggerPlayer.score += S; prevPlayer.score -= S; break;
       case 'give_all': triggerPlayer.score -= S * (N - 1); this.currentPlayers.forEach((p, idx) => { if (idx !== playerIndex) p.score += S; }); break;
       case 'take_all': triggerPlayer.score += S * (N - 1); this.currentPlayers.forEach((p, idx) => { if (idx !== playerIndex) p.score -= S; }); break;
-      case 'give_custom': 
-        if (targetIndex !== undefined) { triggerPlayer.score -= S; this.currentPlayers[targetIndex].score += S; } 
-        break;
-      case 'take_custom': 
-        if (targetIndex !== undefined) { triggerPlayer.score += S; this.currentPlayers[targetIndex].score -= S; } 
-        break;
+      case 'give_custom': if (targetIndex !== undefined) { triggerPlayer.score -= S; this.currentPlayers[targetIndex].score += S; } break;
+      case 'take_custom': if (targetIndex !== undefined) { triggerPlayer.score += S; this.currentPlayers[targetIndex].score -= S; } break;
     }
 
     if (!triggerPlayer.triggeredEvents[eventId]) triggerPlayer.triggeredEvents[eventId] = 0;
@@ -156,12 +184,12 @@ export const gameStore = reactive({
       const winner = this.currentPlayers[winnerIndex];
       const loser = this.currentPlayers[loserIndex];
       const remaining = this.currentPlayers.filter((_, idx) => idx !== winnerIndex && idx !== loserIndex);
-      const newOrder: Player[] =[winner, loser];
+      const newOrder: Player[] = [winner, loser];
 
       if (N === 4) {
         const oldIdx0 = this.currentPlayers.indexOf(remaining[0]);
         const oldIdx1 = this.currentPlayers.indexOf(remaining[1]);
-        const validPermutations =[];
+        const validPermutations = [];
         if (oldIdx0 !== 2 && oldIdx1 !== 3) validPermutations.push([remaining[0], remaining[1]]);
         if (oldIdx1 !== 2 && oldIdx0 !== 3) validPermutations.push([remaining[1], remaining[0]]);
         if (validPermutations.length > 0) newOrder.push(...validPermutations[Math.floor(Math.random() * validPermutations.length)]);
