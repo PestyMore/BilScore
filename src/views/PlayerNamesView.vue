@@ -8,9 +8,7 @@ import type { SavedPlayer } from '../types';
 const route = useRoute();
 const router = useRouter();
 
-// 从路由参数获取需要输入的人数
 const targetCount = Number(route.query.count) || 2;
-
 const currentStep = ref(1);
 const currentNameInput = ref('');
 const collectedNames = ref<string[]>([]);
@@ -18,15 +16,14 @@ const collectedNames = ref<string[]>([]);
 const title = computed(() => `输入第 ${currentStep.value} 位玩家名称`);
 
 const nextStep = () => {
-  // 如果没有输入，给个默认名
   const name = currentNameInput.value.trim() || `玩家 ${currentStep.value}`;
   collectedNames.value.push(name);
-  currentNameInput.value = ''; // 清空输入框
+  currentNameInput.value = ''; 
 
   if (currentStep.value < targetCount) {
     currentStep.value++;
   } else {
-    // 修复：将收集到的字符串名字转换为 SavedPlayer 对象
+    // 【修复】将 string[] 转换为 SavedPlayer[]
     const players: SavedPlayer[] = collectedNames.value.map((n, index) => ({
       id: `temp_${Date.now()}_${index}`,
       name: n,
@@ -67,33 +64,9 @@ const nextStep = () => {
 </template>
 
 <style scoped>
-.progress {
-  text-align: right;
-  color: var(--text-muted);
-  font-weight: bold;
-  margin-bottom: 20px;
-}
-
-.input-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 20px;
-}
-
+.progress { text-align: right; color: var(--text-muted); font-weight: bold; margin-bottom: 20px; }
+.input-area { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 20px; }
 h2 { color: var(--text-main); }
-
-input {
-  text-align: center;
-  font-size: 20px;
-}
-
-.btn-next {
-  width: 100%;
-  height: 60px;
-  margin-bottom: 20px;
-  font-size: 18px;
-}
+input { text-align: center; font-size: 20px; }
+.btn-next { width: 100%; height: 60px; margin-bottom: 20px; font-size: 18px; }
 </style>

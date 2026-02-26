@@ -2,6 +2,11 @@
 import { reactive } from 'vue';
 import type { Player, CustomEvent, GameSnapshot, GameHistory, SavedPlayer } from '../types';
 
+const loadEvents = (): CustomEvent[] => {
+  const saved = localStorage.getItem('bilscore_events');
+  return saved ? JSON.parse(saved) : [];
+};
+
 const loadLocal = (key: string) => {
   const saved = localStorage.getItem(key);
   return saved ? JSON.parse(saved) : [];
@@ -21,11 +26,11 @@ export const gameStore = reactive({
   currentPlayers: [] as Player[],
   currentRound: 1,
   
-  customEvents: loadLocal('bilscore_events') as CustomEvent[],
+  customEvents: loadEvents(),
   history: loadLocal('bilscore_history') as GameHistory[],
   savedPlayers: loadLocal('bilscore_players') as SavedPlayer[],
   
-  // 修复：补回历史快照属性
+  // 【修复】补回历史快照属性
   historySnapshots: [] as GameSnapshot[],
 
   // --- 玩家库管理 ---
@@ -39,8 +44,25 @@ export const gameStore = reactive({
   },
 
   // --- 事件管理 ---
-  addEvent(event: CustomEvent) { this.customEvents.push(event); localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); },
-  deleteEvent(id: string) { this.customEvents = this.customEvents.filter((e: CustomEvent) => e.id !== id); localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); },
+  addEvent(event: CustomEvent) { 
+    this.customEvents.push(event); 
+    this.saveEvents(); 
+  },
+  deleteEvent(id: string) { 
+    this.customEvents = this.customEvents.filter((e: CustomEvent) => e.id !== id); 
+    this.saveEvents(); 
+  },
+  // 【修复】添加更新事件分数的通用方法
+  updateEventScore(id: string, newScore: number) {
+    const ev = this.customEvents.find(e => e.id === id);
+    if (ev) {
+      ev.score = newScore;
+      this.saveEvents();
+    }
+  },
+  saveEvents() { 
+    localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); 
+  },
   
   _autoSaveToHistory() {
     if (!this.currentGameId) return;
@@ -82,6 +104,7 @@ export const gameStore = reactive({
   },
 
   // --- 局内玩家逻辑 ---
+  // 【修复】补回局内改分方法
   updatePlayerScore(playerId: string, newScore: number) {
     this.saveSnapshot(); 
     const player = this.currentPlayers.find(p => p.id === playerId);
