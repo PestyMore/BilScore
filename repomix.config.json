@@ -1,0 +1,29 @@
+{
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "removeComments": false,
+    "removeEmptyLines": true
+  },
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/src-tauri/target/**",
+      "**/src-tauri/gen/android/build/**",
+      "**/src-tauri/gen/android/app/build/**",
+      "**/src-tauri/gen/android/.gradle/**",
+      "**/*.lock",
+      "package-lock.json",
+      "yarn.lock",
+      "pnpm-lock.yaml",
+      "**/*.svg",
+      "**/*.png",
+      "**/*.ico",
+      "**/*.icns",
+      "repomix-output.xml"
+    ]
+  }
+}
