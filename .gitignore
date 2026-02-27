@@ -53,3 +53,6 @@ release_apks/
 # 过滤编译过程中可能产生的 python 缓存
 __pycache__/
 *.pyc
+
+
+*.log
