@@ -8,9 +8,10 @@ export interface CustomEvent {
   targetType: TargetType;
   score: number;
   isNextRound: boolean;
+  // 【修复】添加可选属性，解决 TS2339 和 TS2352 报错
+  isBuiltIn?: boolean;
 }
 
-// --- 新增：保存的玩家信息库 ---
 export interface SavedPlayer {
   id: string;
   name: string;

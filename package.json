@@ -1,14 +1,24 @@
 {
   "name": "bilscore",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "pack": "repomix --config repomix.config.json"
+    "pack": "repomix --config repomix.config.json",
+    "dev:pub": "vite --mode public",
+    "dev:per": "vite --mode personal",
+    "build:pub": "vue-tsc --noEmit && vite build --mode public",
+    "build:per": "vue-tsc --noEmit && vite build --mode personal",
+    "android:dev:pub": "tauri android dev -- --mode public",
+    "android:dev:per": "tauri android dev -- --mode personal",
+    "android:build:pub": "tauri android build -- --mode public",
+    "android:build:per": "tauri android build -- --mode personal",
+    "android:build": "tauri android build",
+    "android:dev": "tauri android dev"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

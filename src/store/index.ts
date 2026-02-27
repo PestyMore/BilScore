@@ -1,10 +1,30 @@
 // src/store/index.ts
 import { reactive } from 'vue';
 import type { Player, CustomEvent, GameSnapshot, GameHistory, SavedPlayer } from '../types';
+import { AppConfig } from '../config';
 
 const loadEvents = (): CustomEvent[] => {
   const saved = localStorage.getItem('bilscore_events');
-  return saved ? JSON.parse(saved) : [];
+  let events: CustomEvent[] = saved ? JSON.parse(saved) : [];
+  
+  if (AppConfig.isPersonal) {
+    // 个人版：注入且保护内置规则
+    AppConfig.builtInEvents.forEach(builtin => {
+      const existing = events.find(e => e.id === builtin.id);
+      if (!existing) {
+        events.push({ ...builtin });
+      } else {
+        existing.name = builtin.name;
+        existing.targetType = builtin.targetType;
+        existing.isNextRound = builtin.isNextRound;
+        existing.isBuiltIn = true;
+      }
+    });
+  } else {
+    // 公共版：剔除内置规则，只留用户自己建的
+    events = events.filter(e => !e.isBuiltIn);
+  }
+  return events;
 };
 
 const loadLocal = (key: string) => {
@@ -25,15 +45,11 @@ export const gameStore = reactive({
   currentGameId: null as string | null,
   currentPlayers: [] as Player[],
   currentRound: 1,
-  
   customEvents: loadEvents(),
   history: loadLocal('bilscore_history') as GameHistory[],
   savedPlayers: loadLocal('bilscore_players') as SavedPlayer[],
-  
-  // 【修复】补回历史快照属性
   historySnapshots: [] as GameSnapshot[],
 
-  // --- 玩家库管理 ---
   addSavedPlayer(player: SavedPlayer) {
     this.savedPlayers.push(player);
     localStorage.setItem('bilscore_players', JSON.stringify(this.savedPlayers));
@@ -43,27 +59,18 @@ export const gameStore = reactive({
     localStorage.setItem('bilscore_players', JSON.stringify(this.savedPlayers));
   },
 
-  // --- 事件管理 ---
-  addEvent(event: CustomEvent) { 
-    this.customEvents.push(event); 
-    this.saveEvents(); 
-  },
+  addEvent(event: CustomEvent) { this.customEvents.push(event); this.saveEvents(); },
   deleteEvent(id: string) { 
-    this.customEvents = this.customEvents.filter((e: CustomEvent) => e.id !== id); 
+    // 判断：如果是 Personal 模式且为内置事件，不可删
+    this.customEvents = this.customEvents.filter((e: CustomEvent) => e.id !== id || (AppConfig.isPersonal && e.isBuiltIn)); 
     this.saveEvents(); 
   },
-  // 【修复】添加更新事件分数的通用方法
   updateEventScore(id: string, newScore: number) {
     const ev = this.customEvents.find(e => e.id === id);
-    if (ev) {
-      ev.score = newScore;
-      this.saveEvents();
-    }
+    if (ev) { ev.score = newScore; this.saveEvents(); }
   },
-  saveEvents() { 
-    localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); 
-  },
-  
+  saveEvents() { localStorage.setItem('bilscore_events', JSON.stringify(this.customEvents)); },
+
   _autoSaveToHistory() {
     if (!this.currentGameId) return;
     const record: GameHistory = { id: this.currentGameId, lastEdited: Date.now(), round: this.currentRound, players: JSON.parse(JSON.stringify(this.currentPlayers)) };
@@ -81,90 +88,52 @@ export const gameStore = reactive({
     this.currentPlayers = selectedPlayers.map(sp => ({ ...sp, score: 0, triggeredEvents: {} }));
     this._autoSaveToHistory();
   },
-
   resumeGame(id: string) {
     const record = this.history.find((h: GameHistory) => h.id === id);
-    if (record) {
-      this.currentGameId = record.id; this.currentRound = record.round; this.currentPlayers = JSON.parse(JSON.stringify(record.players));
-      this.historySnapshots = []; this._autoSaveToHistory();
-    }
+    if (record) { this.currentGameId = record.id; this.currentRound = record.round; this.currentPlayers = JSON.parse(JSON.stringify(record.players)); this.historySnapshots = []; this._autoSaveToHistory(); }
   },
-
   endAndSaveGame() { this._autoSaveToHistory(); this.historySnapshots = []; this.currentGameId = null; },
-  
-  saveSnapshot() { 
-    this.historySnapshots.push({ players: JSON.parse(JSON.stringify(this.currentPlayers)), round: this.currentRound }); 
-  },
-  
+  saveSnapshot() { this.historySnapshots.push({ players: JSON.parse(JSON.stringify(this.currentPlayers)), round: this.currentRound }); },
   undoLastAction() {
-    if (this.historySnapshots.length > 0) {
-      const lastState = this.historySnapshots.pop()!;
-      this.currentPlayers = lastState.players; this.currentRound = lastState.round; this._autoSaveToHistory();
-    }
+    if (this.historySnapshots.length > 0) { const lastState = this.historySnapshots.pop()!; this.currentPlayers = lastState.players; this.currentRound = lastState.round; this._autoSaveToHistory(); }
   },
 
-  // --- 局内玩家逻辑 ---
-  // 【修复】补回局内改分方法
   updatePlayerScore(playerId: string, newScore: number) {
-    this.saveSnapshot(); 
-    const player = this.currentPlayers.find(p => p.id === playerId);
-    if (player) {
-      player.score = newScore;
-      this._autoSaveToHistory();
-    }
+    this.saveSnapshot(); const player = this.currentPlayers.find(p => p.id === playerId);
+    if (player) { player.score = newScore; this._autoSaveToHistory(); }
   },
-
   replacePlayer(oldPlayerId: string, newSavedPlayer: SavedPlayer) {
-    this.saveSnapshot();
-    const player = this.currentPlayers.find(p => p.id === oldPlayerId);
-    if (player) {
-      player.id = newSavedPlayer.id; player.name = newSavedPlayer.name; player.avatarColor = newSavedPlayer.avatarColor;
-      this._autoSaveToHistory();
-    }
+    this.saveSnapshot(); const player = this.currentPlayers.find(p => p.id === oldPlayerId);
+    if (player) { player.id = newSavedPlayer.id; player.name = newSavedPlayer.name; player.avatarColor = newSavedPlayer.avatarColor; this._autoSaveToHistory(); }
   },
-  
   addPlayerMidGame(newSavedPlayer: SavedPlayer) {
-    this.saveSnapshot();
-    this.currentPlayers.push({ ...newSavedPlayer, score: 0, triggeredEvents: {} });
-    this._autoSaveToHistory();
+    this.saveSnapshot(); this.currentPlayers.push({ ...newSavedPlayer, score: 0, triggeredEvents: {} }); this._autoSaveToHistory();
   },
-  
   removePlayerMidGame(playerId: string) {
-    this.saveSnapshot();
-    this.currentPlayers = this.currentPlayers.filter(p => p.id !== playerId);
-    this._autoSaveToHistory();
+    this.saveSnapshot(); this.currentPlayers = this.currentPlayers.filter(p => p.id !== playerId); this._autoSaveToHistory();
   },
-
   applyCustomOrder(orderedIds: string[]) {
-    this.saveSnapshot();
-    const newPlayersList: Player[] = [];
+    this.saveSnapshot(); const newPlayersList: Player[] = [];
     orderedIds.forEach(id => { const p = this.currentPlayers.find(p => p.id === id); if (p) newPlayersList.push(p); });
     this.currentPlayers = newPlayersList; this._autoSaveToHistory();
   },
 
-  // 触发事件
   triggerEvent(playerIndex: number, eventId: string, targetIndex?: number) {
     const event = this.customEvents.find((e: CustomEvent) => e.id === eventId);
     if (!event) return;
-
     this.saveSnapshot();
     const N = this.currentPlayers.length;
     const triggerPlayer = this.currentPlayers[playerIndex];
     const prevIndex = (playerIndex - 1 + N) % N;
-    const prevPlayer = this.currentPlayers[prevIndex];
     const S = event.score;
 
     switch (event.targetType) {
-      case 'give_prev': triggerPlayer.score -= S; prevPlayer.score += S; break;
-      case 'take_prev': triggerPlayer.score += S; prevPlayer.score -= S; break;
+      case 'give_prev': triggerPlayer.score -= S; this.currentPlayers[prevIndex].score += S; break;
+      case 'take_prev': triggerPlayer.score += S; this.currentPlayers[prevIndex].score -= S; break;
       case 'give_all': triggerPlayer.score -= S * (N - 1); this.currentPlayers.forEach((p, idx) => { if (idx !== playerIndex) p.score += S; }); break;
       case 'take_all': triggerPlayer.score += S * (N - 1); this.currentPlayers.forEach((p, idx) => { if (idx !== playerIndex) p.score -= S; }); break;
-      case 'give_custom': 
-        if (targetIndex !== undefined) { triggerPlayer.score -= S; this.currentPlayers[targetIndex].score += S; } 
-        break;
-      case 'take_custom': 
-        if (targetIndex !== undefined) { triggerPlayer.score += S; this.currentPlayers[targetIndex].score -= S; } 
-        break;
+      case 'give_custom': if (targetIndex !== undefined) { triggerPlayer.score -= S; this.currentPlayers[targetIndex].score += S; } break;
+      case 'take_custom': if (targetIndex !== undefined) { triggerPlayer.score += S; this.currentPlayers[targetIndex].score -= S; } break;
     }
 
     if (!triggerPlayer.triggeredEvents[eventId]) triggerPlayer.triggeredEvents[eventId] = 0;

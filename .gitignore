@@ -43,3 +43,13 @@ src-tauri/gen/android/captures/
 
 *.py
 *.xml
+# --- V1.1.0 新增过滤规则 ---
+# 过滤打包产物目录
+release_apks/
+
+# 过滤本地运行时的环境切换文件（我们只提交 .env.public 和 .env.personal）
+.env
+
+# 过滤编译过程中可能产生的 python 缓存
+__pycache__/
+*.pyc
