@@ -6,8 +6,8 @@ const router = createRouter({
   history: createWebHistory(),
   routes:[
     { path: '/', name: 'Home', component: HomeView },
-    { path: '/select-count', name: 'PlayerCount', component: () => import('../views/PlayerCountView.vue') },
-    { path: '/input-names', name: 'PlayerSelect', component: () => import('../views/PlayerSelectView.vue') }, // 核心修改
+    // 移除 PlayerCountView，直接去选人
+    { path: '/select-players', name: 'PlayerSelect', component: () => import('../views/PlayerSelectView.vue') },
     { path: '/game', name: 'Game', component: () => import('../views/GameView.vue') },
     
     { path: '/events', name: 'EventList', component: () => import('../views/events/EventListView.vue') },

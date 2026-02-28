@@ -5,6 +5,13 @@ import { gameStore } from '../store';
 import { getAvatarText } from '../utils/avatar';
 import { AppConfig } from '../config';
 
+import iconAdd from '../assets/icons/add.png';
+import iconSort from '../assets/icons/sort.png';
+import iconUndo from '../assets/icons/undo.png';
+import iconEnd from '../assets/icons/end.png';
+import iconReplace from '../assets/icons/replace.png';
+import iconRemove from '../assets/icons/remove.png';
+
 const router = useRouter();
 const selectedPlayerIndex = ref<number | null>(null);
 const isMainModalOpen = ref(false);
@@ -70,12 +77,23 @@ const endGame = () => { if (confirm("确定要结束本局并保存记录吗？"
 <template>
   <div class="game-view-wrapper">
     <div class="game-header">
-      <div class="round-display"><span class="r-label">Round</span><span class="r-num">{{ gameStore.currentRound }}</span></div>
+      <div class="round-display">
+        <span class="r-label">Round</span>
+        <span class="r-num">{{ gameStore.currentRound }}</span>
+      </div>
       <div class="control-actions">
-        <button class="icon-text-btn" @click="isAddPlayerModalOpen = true">➕ 加人</button>
-        <button class="icon-text-btn" @click="openReorderModal">🔄 排序</button>
-        <button class="icon-text-btn" :disabled="gameStore.historySnapshots.length === 0" @click="gameStore.undoLastAction()">↩️ 撤销</button>
-        <button class="icon-text-btn danger" @click="endGame">⏹ 结束</button>
+        <button class="img-btn" @click="isAddPlayerModalOpen = true">
+          <img :src="iconAdd" alt="加人" class="adaptive-icon" />
+        </button>
+        <button class="img-btn" @click="openReorderModal">
+          <img :src="iconSort" alt="排序" class="adaptive-icon" />
+        </button>
+        <button class="img-btn" :disabled="gameStore.historySnapshots.length === 0" @click="gameStore.undoLastAction()">
+          <img :src="iconUndo" alt="撤销" class="adaptive-icon" />
+        </button>
+        <button class="img-btn" @click="endGame">
+          <img :src="iconEnd" alt="结束" class="adaptive-icon" />
+        </button>
       </div>
     </div>
 
@@ -100,7 +118,6 @@ const endGame = () => { if (confirm("确定要结束本局并保存记录吗？"
       <div class="safe-bottom-spacer"></div>
     </div>
 
-    <!-- MAIN MODAL -->
     <transition name="modal-slide">
       <div v-if="isMainModalOpen" class="sheet-overlay" @click.self="closeAllModals">
         <div class="sheet-content">
@@ -145,19 +162,21 @@ const endGame = () => { if (confirm("确定要结束本局并保存记录吗？"
             <div v-if="modalTab === 'manage'" class="tab-content flex-col">
               <div class="edit-box">
                 <label>强制修改分数</label>
-                <!-- 优化这里的 Input -->
                 <input type="number" v-model.number="editScore" class="modal-input" />
                 <button class="btn btn-primary" @click="saveScoreEdit" style="margin-top:10px;width:100%">保存分数</button>
               </div>
-              <button class="btn" @click="isReplaceModalOpen = true; isMainModalOpen = false;">🔄 替换玩家</button>
-              <button class="btn btn-danger" @click="removeCurrentPlayer">🗑️ 移出对局</button>
+              <button class="btn btn-icon-row" @click="isReplaceModalOpen = true; isMainModalOpen = false;">
+                <img :src="iconReplace" class="btn-icon adaptive-icon" /> 替换玩家
+              </button>
+              <button class="btn btn-icon-row btn-danger" @click="removeCurrentPlayer">
+                <img :src="iconRemove" class="btn-icon adaptive-icon" /> 移出对局
+              </button>
             </div>
           </div>
         </div>
       </div>
     </transition>
     
-    <!-- Lists Modals -->
     <transition name="fade">
       <div v-if="isReplaceModalOpen || isAddPlayerModalOpen || isReorderModalOpen" class="modal-center-overlay" @click.self="closeAllModals">
         <div class="modal-center-content">
@@ -178,22 +197,57 @@ const endGame = () => { if (confirm("确定要结束本局并保存记录吗？"
 </template>
 
 <style scoped>
-/* 继承之前的流体布局 CSS */
+/* 使用从 App.vue 传来的 CSS 变量，代码极度清爽且不会报错 */
+.adaptive-icon { 
+  filter: var(--icon-filter); 
+  transition: filter 0.3s ease; 
+}
+
 .game-view-wrapper { height: 100vh; display: flex; flex-direction: column; background: var(--bg-grad); overflow: hidden; }
-.game-header { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: calc(var(--safe-top) + 15px) 20px 15px 20px; background: rgba(0,0,0,0.3); backdrop-filter: blur(10px); border-bottom: var(--glass-border); }
-.round-display { display: flex; flex-direction: column; align-items: center; background: rgba(128,128,128,0.1); padding: 5px 12px; border-radius: 12px; }
-.r-label { font-size: 10px; color: var(--warning); text-transform: uppercase; font-weight: bold; }
-.r-num { font-size: 22px; font-weight: 900; line-height: 1; }
+.game-header { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: calc(var(--safe-top) + 15px) 20px 15px 20px; background: rgba(0,0,0,0.05); backdrop-filter: blur(10px); border-bottom: var(--glass-border); }
+
+/* --- 核心修复：Round UI 使用动态变量 --- */
+.round-display { 
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 8px 16px; border-radius: 14px; 
+  background: var(--round-bg); 
+  border: var(--round-border);
+  box-shadow: var(--round-shadow);
+  transition: all 0.3s ease;
+}
+.r-label { font-size: 11px; color: var(--round-label); text-transform: uppercase; font-weight: 800; letter-spacing: 1px; }
+.r-num { font-size: 24px; color: var(--round-num); font-weight: 900; line-height: 1.1; }
+
 .control-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .icon-text-btn { background: var(--glass); border: var(--glass-border); color: var(--text-main); padding: 10px 14px; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; }
 .icon-text-btn:active:not(:disabled) { transform: scale(0.92); }
 .icon-text-btn:disabled { opacity: 0.4; }
 .danger { color: var(--danger); }
+
+/* 图片按钮 */
+.img-btn { 
+  background: var(--glass); border: var(--glass-border); border-radius: 16px; 
+  padding: 10px; width: 50px; height: 50px; 
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: 0.2s;
+  box-shadow: var(--shadow-sm); /* 使用动态阴影 */
+}
+.img-btn img { width: 28px; height: 28px; object-fit: contain; }
+.img-btn:active:not(:disabled) { transform: scale(0.9); background: rgba(128,128,128,0.15); }
+.img-btn:disabled { opacity: 0.4; filter: grayscale(100%); }
+
 .players-scroll-area { flex: 1; overflow-y: auto; }
 .players-grid-container { padding: 20px; display: grid; grid-template-columns: 1fr; gap: 16px; margin: 0 auto; width: 100%; align-content: start; }
 @media (min-width: 700px) { .players-grid-container { grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1200px; } }
 .safe-bottom-spacer { height: calc(var(--safe-bottom) + 20px); }
-.p-card { background: var(--glass); border: var(--glass-border); border-radius: 24px; display: flex; flex-direction: column; cursor: pointer; transition: 0.2s; padding: clamp(20px, 3%, 40px); }
+
+/* 玩家卡片 */
+.p-card { 
+  background: var(--glass); border: var(--glass-border); border-radius: 24px; 
+  display: flex; flex-direction: column; cursor: pointer; transition: 0.2s; 
+  padding: clamp(20px, 3%, 40px); 
+  box-shadow: var(--shadow-md); /* 使用动态阴影 */
+}
 .p-card:active { transform: scale(0.98); background: rgba(128,128,128,0.1); }
 .p-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: clamp(10px, 2%, 20px); }
 .p-info-group { display: flex; align-items: center; gap: 12px; flex: 1; overflow: hidden; }
@@ -206,14 +260,16 @@ const endGame = () => { if (confirm("确定要结束本局并保存记录吗？"
 .tag { background: rgba(128,128,128,0.1); display: flex; align-items: center; gap: 6px; border-radius: 12px; padding: clamp(4px, 0.5vw, 8px) clamp(10px, 1vw, 16px); font-size: clamp(12px, 1.2vw, 16px); }
 .badge { background: var(--primary); color: white; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 50%; width: clamp(16px, 1.8vw, 24px); height: clamp(16px, 1.8vw, 24px); font-size: clamp(10px, 1vw, 14px); }
 
-/* Modal 样式微调 */
+.btn-icon-row { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.btn-icon { width: 24px; height: 24px; object-fit: contain; }
+
 .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: flex-end; }
 .sheet-content { width: 100%; background: var(--glass-modal); border-radius: 24px 24px 0 0; padding: 15px 20px; padding-bottom: calc(var(--safe-bottom) + 30px); }
 .sheet-handle { width: 40px; height: 5px; background: rgba(128,128,128,0.3); border-radius: 3px; margin: 0 auto 20px; }
 .sheet-title { text-align: center; font-size: 20px; font-weight: bold; margin-bottom: 20px; color: var(--text-main); }
 .segmented-control { display: flex; background: rgba(128,128,128,0.2); border-radius: 12px; padding: 4px; margin-bottom: 20px; }
 .segmented-control button { flex: 1; padding: 10px; border: none; background: transparent; color: var(--text-muted); font-size: 14px; }
-.segmented-control button.active { background: rgba(255,255,255,0.15); color: var(--text-main); }
+.segmented-control button.active { background: rgba(128,128,128,0.2); color: var(--text-main); font-weight: bold; border-radius: 10px; }
 .tab-content { max-height: 50vh; overflow-y: auto; padding-bottom: 10px; }
 .event-group { margin-bottom: 20px; }
 .group-title { font-size: 13px; font-weight: bold; color: var(--text-muted); margin-bottom: 10px; padding-left: 5px; }
