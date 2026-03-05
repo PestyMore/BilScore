@@ -2,13 +2,14 @@
 import { useRouter } from 'vue-router';
 import { gameStore } from '../../store';
 import { getAvatarText } from '../../utils/avatar';
+import { appConfirm } from '../../utils/dialog'; // New dialog
 
 const router = useRouter();
-const deletePlayer = (id: string) => {
-  if (confirm('确定要删除该玩家吗？')) gameStore.deleteSavedPlayer(id);
+const deletePlayer = async (id: string) => {
+  const ok = await appConfirm('确定要删除该玩家吗？', '删除玩家');
+  if (ok) gameStore.deleteSavedPlayer(id);
 };
 </script>
-
 <template>
   <div class="page-container">
     <div class="top-bar">
@@ -16,7 +17,6 @@ const deletePlayer = (id: string) => {
       <h2>玩家管理</h2>
       <button class="icon-btn" style="font-size: 24px;" @click="router.push('/players/new')">+</button>
     </div>
-
     <div class="list">
       <div v-if="gameStore.savedPlayers.length === 0" class="empty">暂无玩家，请点击右上角添加。</div>
       <div v-for="p in gameStore.savedPlayers" :key="p.id" class="list-item">
@@ -29,7 +29,6 @@ const deletePlayer = (id: string) => {
     </div>
   </div>
 </template>
-
 <style scoped>
 .list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .list-item { background: var(--glass); padding: 15px; border-radius: 16px; border: var(--glass-border); display: flex; justify-content: space-between; align-items: center; }

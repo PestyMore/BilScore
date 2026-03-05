@@ -3,21 +3,24 @@ import { computed, ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { gameStore } from '../../store';
 import { AppConfig } from '../../config';
+import { appConfirm } from '../../utils/dialog'; // New dialog
 import type { CustomEvent } from '../../types';
 
 const route = useRoute();
 const router = useRouter();
 const eventId = route.params.id as string;
 const event = computed(() => gameStore.customEvents.find((e: CustomEvent) => e.id === eventId));
-
-const targetMap = { give_prev: '给上家分', take_prev: '吃上家分', give_all: '给所有人分', take_all: '吃所有人分', take_custom: '吃指定玩家分', give_custom: '给指定玩家分' };
+const targetMap: any = { give_prev: '给上家分', take_prev: '吃上家分', give_all: '给所有人分', take_all: '吃所有人分', take_custom: '吃指定玩家分', give_custom: '给指定玩家分' };
 const editScore = ref(0);
 
 onMounted(() => { if (event.value) editScore.value = event.value.score; });
-const saveScore = () => { gameStore.updateEventScore(eventId, editScore.value); router.back(); };
-const deleteEvent = () => { if (confirm('确定要删除此事件吗？')) { gameStore.deleteEvent(eventId); router.back(); } };
-</script>
 
+const saveScore = () => { gameStore.updateEventScore(eventId, editScore.value); router.back(); };
+const deleteEvent = async () => { 
+  const ok = await appConfirm('确定要删除此事件吗？', '删除事件');
+  if (ok) { gameStore.deleteEvent(eventId); router.back(); } 
+};
+</script>
 <template>
   <div class="page-container" v-if="event">
     <div class="top-bar"><button class="icon-btn" @click="router.back()">返回</button><h2>事件详情</h2><div style="width: 40px;"></div></div>
