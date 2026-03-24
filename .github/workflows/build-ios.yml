@@ -30,9 +30,21 @@ jobs:
       - name: Init Tauri iOS
         run: npx tauri ios init
 
-      - name: Build App via Tauri (Let it fail at signing)
-        # 核心修复：Tauri CLI 参数只需传 aarch64
-        # 使用 || true 忽略由于没有苹果证书导致的最后一步签名报错
+      - name: Patch Xcode Project (物理阉割签名限制)
+        # 核心魔法：使用 sed 命令强行修改 Xcode 工程底层的配置文件
+        # 把自动签名改为手动，并清空所有开发者团队要求，骗过 Xcode 的预检查
+        run: |
+          cd src-tauri/gen/apple/bilscore.xcodeproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = ".*";/CODE_SIGN_IDENTITY = "";/g' project.pbxproj
+          sed -i '' 's/DEVELOPMENT_TEAM = ".*";/DEVELOPMENT_TEAM = "";/g' project.pbxproj
+
+      - name: Build App via Tauri
+        # 给底层环境注入全局免签变量，配合上面的修改，Xcode 就会乖乖编译出完整的 App
+        env:
+          CODE_SIGNING_ALLOWED: "NO"
+          CODE_SIGNING_REQUIRED: "NO"
+          CODE_SIGN_IDENTITY: ""
         run: npx tauri ios build --target aarch64 || true
 
       - name: Package into IPA
@@ -40,13 +52,10 @@ jobs:
           mkdir -p Payload
           
           echo "🔍 正在寻找编译好的 .app 文件..."
-          # .app 在 macOS 中是一个文件夹，寻找它并排除模拟器的 Debug 版本
           APP_PATH=$(find src-tauri/gen/apple -type d -name "*.app" | grep -v "Debug" | head -n 1)
           
           if [ -z "$APP_PATH" ]; then
-            echo "❌ 错误：未能找到 .app 文件！可能是前面的 Rust 编译阶段出了严重错误。"
-            echo "--- 输出 apple 目录结构供排错 ---"
-            ls -R src-tauri/gen/apple || true
+            echo "❌ 错误：未能找到 .app 文件！"
             exit 1
           fi
           
