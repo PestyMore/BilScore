@@ -30,16 +30,20 @@ jobs:
       - name: Init Tauri iOS
         run: npx tauri ios init
 
-      - name: Prepare iOS Assets
-        # 这一步非常重要：让 Tauri 帮你把网页打包进 iOS 工程，并编译 Rust 核心。
-        # 它最后会因为没有苹果证书而报错退出，但我们加了 `|| true`，让它报错也继续往下走！
-        run: npx tauri ios build --target aarch64-apple-ios || true
+      - name: [核心修复 1] 手动编译 Rust 为 iOS 静态库
+        # 绕开 Xcode，我们自己用标准的 cargo 命令编译 Rust 代码
+        run: |
+          cd src-tauri
+          cargo build --release --target aarch64-apple-ios
 
-      - name: Build Unsigned IPA via Xcode
-        # 使用苹果原生命令强行闭屏签名检查，打包出纯净版 IPA
+      - name: [核心修复 2] Xcode 免签打包 (跳过坑人脚本)
         run: |
           cd src-tauri/gen/apple
           
+          # 告诉 Xcode 绝对不要运行 Tauri 那个会崩溃的脚本
+          export TAURI_SKIP_DEVSCRIPTS=true
+          
+          # 开始强行免签编译
           xcodebuild clean build \
             -project bilscore.xcodeproj \
             -scheme bilscore_iOS \
@@ -51,8 +55,13 @@ jobs:
             ENTITLEMENTS_REQUIRED=NO \
             CONFIGURATION_BUILD_DIR=$(pwd)/build/Release-iphoneos
             
+          # 提取并打包 IPA
           mkdir -p Payload
-          cp -r build/Release-iphoneos/bilscore.app Payload/
+          
+          # 自动寻找编译出来的 .app 文件（防止大小写命名问题导致找不到文件）
+          APP_NAME=$(ls build/Release-iphoneos | grep .app | head -n 1)
+          cp -r "build/Release-iphoneos/$APP_NAME" Payload/
+          
           zip -r bilscore.ipa Payload
 
       - name: Upload IPA Artifact
