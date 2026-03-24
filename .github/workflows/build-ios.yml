@@ -1,12 +1,10 @@
 name: Build iOS IPA (No Mac Needed)
 
-# 允许手动在 Actions 页面点击按钮触发
 on:
   workflow_dispatch:
 
 jobs:
   build-ios:
-    # 强制使用 GitHub 提供的 macOS 虚拟机
     runs-on: macos-latest
     
     steps:
@@ -21,7 +19,6 @@ jobs:
       - name: 配置 Rust 环境
         uses: dtolnay/rust-toolchain@stable
         with:
-          # 添加 iOS 编译目标架构
           targets: aarch64-apple-ios, x86_64-apple-ios, aarch64-apple-ios-sim
 
       - name: 安装前端依赖
@@ -30,33 +27,29 @@ jobs:
       - name: 构建 Vue 前端
         run: npm run build
 
-      - name: 魔法时刻：在虚拟机中初始化 iOS 工程
-        # 这一步代替了你需要拥有一台 Mac 的要求
+      - name: 初始化 Tauri iOS 工程
         run: npx tauri ios init
 
-      - name: 构建 Tauri iOS (预期会因签名失败报错，但会编译出 Rust 库)
-        # 运行 tauri 打包，它在最后签名阶段会报错，但前面的编译工作已经完成了
+      - name: 构建 Tauri iOS (预期会因签名失败报错，这一步会编译 Rust 代码)
         run: npx tauri ios build --target aarch64-apple-ios
         continue-on-error: true
 
       - name: 强制去除签名并生成 IPA 安装包
-        # 使用 Xcode 命令行工具强行免签打包
         run: |
           cd src-tauri/gen/apple
           
-          # 1. 强行关闭代码签名进行编译
           xcodebuild clean build \
-            -workspace bilscore.xcworkspace \
+            -project bilscore.xcodeproj \
             -scheme bilscore_iOS \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            ENTITLEMENTS_REQUIRED=NO
+            ENTITLEMENTS_REQUIRED=NO \
+            CONFIGURATION_BUILD_DIR=$(pwd)/build/Release-iphoneos
             
-          # 2. 将编译出的 app 包装成 ipa 格式
-          mkdir Payload
+          mkdir -p Payload
           cp -r build/Release-iphoneos/bilscore.app Payload/
           zip -r bilscore.ipa Payload
 
