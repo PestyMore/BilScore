@@ -1,50 +1,46 @@
-name: Build iOS IPA (No Mac Needed - Robust Version)
+name: Build iOS Unsigned IPA
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-ios:
+  build:
     runs-on: macos-latest
     
     steps:
-      - name: 检出代码
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 配置 Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: 配置 Rust 环境
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios
 
-      - name: 安装前端依赖
+      - name: Install Dependencies
         run: npm install
 
-      - name: 构建 Vue 前端
+      - name: Build Vue Frontend
         run: npm run build
 
-      - name: 初始化 Tauri iOS 工程
+      - name: Init Tauri iOS
         run: npx tauri ios init
 
-      # --- START OF NEW BUILD LOGIC ---
-      - name: Step 1: 手动编译 Rust 代码为静态库
-        # We manually compile the Rust code for iOS. This is more reliable than letting Xcode do it.
-        run: |
-          cd src-tauri
-          cargo build --release --target aarch64-apple-ios
+      - name: Prepare iOS Assets
+        # 这一步非常重要：让 Tauri 帮你把网页打包进 iOS 工程，并编译 Rust 核心。
+        # 它最后会因为没有苹果证书而报错退出，但我们加了 `|| true`，让它报错也继续往下走！
+        run: npx tauri ios build --target aarch64-apple-ios || true
 
-      - name: Step 2: 强制去除签名并生成 IPA 安装包
-        # We tell xcodebuild to build the app, but we also pass an environment variable
-        # TAURI_SKIP_DEVSCRIPTS=true which tells the Xcode project to NOT run the "Build Rust Code" phase,
-        # because we have already done it in the previous step.
+      - name: Build Unsigned IPA via Xcode
+        # 使用苹果原生命令强行闭屏签名检查，打包出纯净版 IPA
         run: |
           cd src-tauri/gen/apple
           
-          TAURI_SKIP_DEVSCRIPTS=true xcodebuild clean build \
+          xcodebuild clean build \
             -project bilscore.xcodeproj \
             -scheme bilscore_iOS \
             -configuration Release \
@@ -56,13 +52,10 @@ jobs:
             CONFIGURATION_BUILD_DIR=$(pwd)/build/Release-iphoneos
             
           mkdir -p Payload
-          # Copy the compiled Rust library into the final app bundle
-          cp ../target/aarch64-apple-ios/release/libbilscore_lib.a build/Release-iphoneos/bilscore.app/
           cp -r build/Release-iphoneos/bilscore.app Payload/
           zip -r bilscore.ipa Payload
-      # --- END OF NEW BUILD LOGIC ---
 
-      - name: 上传生成的 IPA 提供下载
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: bilscore-unsigned-ipa
