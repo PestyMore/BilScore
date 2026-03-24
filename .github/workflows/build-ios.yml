@@ -1,4 +1,4 @@
-name: Build iOS IPA (No Mac Needed)
+name: Build iOS IPA (No Mac Needed - Robust Version)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
       - name: 配置 Rust 环境
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios, x86_64-apple-ios, aarch64-apple-ios-sim
+          targets: aarch64-apple-ios
 
       - name: 安装前端依赖
         run: npm install
@@ -30,15 +30,21 @@ jobs:
       - name: 初始化 Tauri iOS 工程
         run: npx tauri ios init
 
-      - name: 构建 Tauri iOS (预期会因签名失败报错，这一步会编译 Rust 代码)
-        run: npx tauri ios build --target aarch64-apple-ios
-        continue-on-error: true
+      # --- START OF NEW BUILD LOGIC ---
+      - name: Step 1: 手动编译 Rust 代码为静态库
+        # We manually compile the Rust code for iOS. This is more reliable than letting Xcode do it.
+        run: |
+          cd src-tauri
+          cargo build --release --target aarch64-apple-ios
 
-      - name: 强制去除签名并生成 IPA 安装包
+      - name: Step 2: 强制去除签名并生成 IPA 安装包
+        # We tell xcodebuild to build the app, but we also pass an environment variable
+        # TAURI_SKIP_DEVSCRIPTS=true which tells the Xcode project to NOT run the "Build Rust Code" phase,
+        # because we have already done it in the previous step.
         run: |
           cd src-tauri/gen/apple
           
-          xcodebuild clean build \
+          TAURI_SKIP_DEVSCRIPTS=true xcodebuild clean build \
             -project bilscore.xcodeproj \
             -scheme bilscore_iOS \
             -configuration Release \
@@ -50,8 +56,11 @@ jobs:
             CONFIGURATION_BUILD_DIR=$(pwd)/build/Release-iphoneos
             
           mkdir -p Payload
+          # Copy the compiled Rust library into the final app bundle
+          cp ../target/aarch64-apple-ios/release/libbilscore_lib.a build/Release-iphoneos/bilscore.app/
           cp -r build/Release-iphoneos/bilscore.app Payload/
           zip -r bilscore.ipa Payload
+      # --- END OF NEW BUILD LOGIC ---
 
       - name: 上传生成的 IPA 提供下载
         uses: actions/upload-artifact@v4
