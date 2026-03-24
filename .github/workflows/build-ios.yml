@@ -31,23 +31,22 @@ jobs:
         run: npx tauri ios init
 
       - name: Build App via Tauri (Let it fail at signing)
-        # 核心逻辑：正常调用官方构建命令。
-        # 它会在最后签名阶段因为没有证书而报错，但此时 app 已经编译完成了。
-        # 我们用 '|| true' 让流程忽略这个报错，继续往下走去提取 app。
-        run: npx tauri ios build --target aarch64-apple-ios || true
+        # 核心修复：Tauri CLI 参数只需传 aarch64
+        # 使用 || true 忽略由于没有苹果证书导致的最后一步签名报错
+        run: npx tauri ios build --target aarch64 || true
 
       - name: Package into IPA
         run: |
           mkdir -p Payload
           
           echo "🔍 正在寻找编译好的 .app 文件..."
-          # .app 在 macOS 中其实是一个文件夹，所以用 -type d 寻找
-          APP_PATH=$(find src-tauri/gen/apple -type d -name "*.app" | head -n 1)
+          # .app 在 macOS 中是一个文件夹，寻找它并排除模拟器的 Debug 版本
+          APP_PATH=$(find src-tauri/gen/apple -type d -name "*.app" | grep -v "Debug" | head -n 1)
           
           if [ -z "$APP_PATH" ]; then
             echo "❌ 错误：未能找到 .app 文件！可能是前面的 Rust 编译阶段出了严重错误。"
-            echo "--- 输出 build 目录结构供排错 ---"
-            ls -R src-tauri/gen/apple/build || true
+            echo "--- 输出 apple 目录结构供排错 ---"
+            ls -R src-tauri/gen/apple || true
             exit 1
           fi
           
