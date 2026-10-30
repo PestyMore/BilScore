@@ -74,6 +74,12 @@ export const gameStore = reactive({
     this.savedPlayers = this.savedPlayers.filter((p: SavedPlayer) => p.id !== id);
     save(KEY_PLAYERS, this.savedPlayers);
   },
+  updateSavedPlayer(id: string, patch: Partial<SavedPlayer>) {
+    const idx = this.savedPlayers.findIndex((p: SavedPlayer) => p.id === id);
+    if (idx === -1) return;
+    this.savedPlayers[idx] = { ...this.savedPlayers[idx], ...patch };
+    save(KEY_PLAYERS, this.savedPlayers);
+  },
   addEvent(event: CustomEvent) { this.customEvents.push(event); this.saveEvents(); },
   deleteEvent(id: string) {
     this.customEvents = this.customEvents.filter((e: CustomEvent) => e.id !== id || (AppConfig.isPersonal && e.isBuiltIn));

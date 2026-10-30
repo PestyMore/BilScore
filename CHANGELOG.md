@@ -1,4 +1,26 @@
-# 📝 更新日志
+## v1.4.0（2026-10-31）· 玩家编辑 + 应用图标
+
+### ✨ 新功能
+
+- **玩家编辑**：玩家库点任意一行进入编辑（原来只能删除重建），支持改名与换头像颜色；新建页同一组件，靠路由 `:id` 区分，标题与按钮文案随之切换。
+- **头像换色**：点击预览头像循环切换色板，色板抽到 `AVATAR_COLORS` 统一维护。
+
+### 🎨 应用图标
+
+- 新增 `app-icon.svg`（8 号球），用 `tauri icon` 重新生成**全平台**图标：桌面 / Windows Store / iOS 全尺寸 / Android mipmap。
+- 之前 Android 用的是 Android Studio 的**默认占位图标**（绿色网格 + 机器人前景），现在换成自适应图标：
+  - `drawable/ic_launcher_background.xml` → 纯色深底（替换绿色网格）
+  - `drawable-v24/ic_launcher_foreground.xml` → 8 号球矢量（按自适应图标 66dp 安全区设计，任何裁切形状都不会切到球）
+  - 补齐 `mipmap-*` 各密度的 `ic_launcher.png`（此前 API < 26 的设备完全没有图标）
+- 应用名从 `bilscore` 改为 `BilScore`（Android `strings.xml`）。
+- `icon.icns` 等体积从约 2.9MB 降到 0.5MB（简洁图形压缩率高得多）。
+- 桌面开发窗口的 favicon 换成自有 `public/favicon.svg`，删除默认 `tauri.svg`。
+
+### 🧪 测试
+
+- 冒烟测试新增 `/players/:id` 编辑模式用例，断言标题切换为「编辑玩家」且预填了玩家数据（路由表与真实 app 保持同步）。
+
+---
 
 ## v1.3.1（2026-10-31）· 优化打磨
 

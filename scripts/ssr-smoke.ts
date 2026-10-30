@@ -30,6 +30,7 @@ const routes = [
   { path: '/events/:id', name: 'EventDetail', component: EventDetailView },
   { path: '/players', name: 'PlayerList', component: PlayerListView },
   { path: '/players/new', name: 'PlayerCreate', component: PlayerCreateView },
+  { path: '/players/:id', name: 'PlayerEdit', component: PlayerCreateView },
 ];
 
 const cases: { path: string; expect: string[] }[] = [
@@ -41,6 +42,8 @@ const cases: { path: string; expect: string[] }[] = [
   { path: '/events/new', expect: ['新建规则'] },
   { path: '/players', expect: ['玩家库', '张三'] },
   { path: '/players/new', expect: ['新建玩家'] },
+  // 同一个组件靠 :id 切换成编辑模式，这里断言它确实预填了玩家数据
+  { path: '/players/u_1', expect: ['编辑玩家', '张三'] },
 ];
 
 async function main() {

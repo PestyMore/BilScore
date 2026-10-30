@@ -15,8 +15,13 @@ export const getAvatarText = (name: string): string => {
   return lastWord ? lastWord.charAt(0).toUpperCase() : '?';
 };
 
+// 头像色板：明亮、彼此可区分，深色文字/白色字都压得住
+export const AVATAR_COLORS = [
+  '#ff4757', '#5352ed', '#1e90ff', '#2ed573',
+  '#ffa502', '#ff7f50', '#3742fa', '#2bcbba',
+  '#eb4d4b', '#6c5ce7',
+];
+
 // 获取随机明亮色彩
-export const getRandomColor = (): string => {
-  const colors =['#ff4757', '#5352ed', '#1e90ff', '#2ed573', '#ffa502', '#ff7f50', '#3742fa', '#2bcbba', '#eb4d4b', '#6c5ce7'];
-  return colors[Math.floor(Math.random() * colors.length)];
-};
+export const getRandomColor = (): string =>
+  AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];

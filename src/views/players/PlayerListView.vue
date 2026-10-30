@@ -12,6 +12,8 @@ const deletePlayer = async (id: string) => {
   const ok = await appConfirm('确定要删除该玩家吗？', '删除玩家');
   if (ok) gameStore.deleteSavedPlayer(id);
 };
+
+const editPlayer = (id: string) => router.push(`/players/${id}`);
 </script>
 
 <template>
@@ -34,12 +36,17 @@ const deletePlayer = async (id: string) => {
       <template v-if="gameStore.savedPlayers.length">
         <div class="section-title">共 {{ gameStore.savedPlayers.length }} 位</div>
         <div class="card list">
-          <div v-for="p in gameStore.savedPlayers" :key="p.id" class="row static">
+          <div v-for="p in gameStore.savedPlayers" :key="p.id" class="row" @click="editPlayer(p.id)">
             <PlayerAvatar :name="p.name" :color="p.avatarColor" :size="38" />
             <div class="row-main">
               <div class="row-title">{{ p.name }}</div>
             </div>
-            <button class="icon-btn ghost danger" @click="deletePlayer(p.id)" aria-label="删除">
+            <AppIcon name="chevron-right" :size="18" class="row-trail-icon" />
+            <button
+              class="icon-btn ghost danger"
+              @click.stop="deletePlayer(p.id)"
+              aria-label="删除"
+            >
               <AppIcon name="trash-2" :size="19" />
             </button>
           </div>
@@ -70,6 +77,10 @@ const deletePlayer = async (id: string) => {
 }
 .danger {
   color: var(--danger);
+}
+.row-trail-icon {
+  color: var(--text-3);
+  flex: none;
 }
 .bottom-space {
   height: var(--s6);

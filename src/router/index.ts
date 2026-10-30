@@ -16,6 +16,8 @@ const router = createRouter({
     
     { path: '/players', name: 'PlayerList', component: () => import('../views/players/PlayerListView.vue') },
     { path: '/players/new', name: 'PlayerCreate', component: () => import('../views/players/PlayerCreateView.vue') },
+    // 同一个组件兼顾新建与编辑，靠是否有 :id 区分
+    { path: '/players/:id', name: 'PlayerEdit', component: () => import('../views/players/PlayerCreateView.vue') },
   ]
 });
 
