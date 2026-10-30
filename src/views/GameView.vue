@@ -26,8 +26,23 @@ const reorderSelection = ref<string[]>([]);
 const positiveEvents = computed(() => gameStore.customEvents.filter((e) => e.targetType.includes('take')));
 const negativeEvents = computed(() => gameStore.customEvents.filter((e) => e.targetType.includes('give')));
 const availablePlayersForReplace = computed(() => {
-  const inGameIds = gameStore.currentPlayers.map((p) => p.id);
-  return gameStore.savedPlayers.filter((sp) => !inGameIds.includes(sp.id));
+  const inGameIds = new Set(gameStore.currentPlayers.map((p) => p.id));
+  return gameStore.savedPlayers.filter((sp) => !inGameIds.has(sp.id));
+});
+
+// 事件标签：按"规则定义顺序"预计算，而不是遍历玩家的 triggeredEvents。
+// 后者顺序取决于 Rust HashMap 的序列化顺序（不稳定），且模板里要反复 find。
+const playerTags = computed(() => {
+  const map: Record<string, { id: string; name: string; count: number }[]> = {};
+  for (const p of gameStore.currentPlayers) {
+    const tags: { id: string; name: string; count: number }[] = [];
+    for (const e of gameStore.customEvents) {
+      const count = p.triggeredEvents?.[e.id];
+      if (count) tags.push({ id: e.id, name: e.name, count });
+    }
+    map[p.id] = tags;
+  }
+  return map;
 });
 const selectedPlayer = computed(() =>
   selectedPlayerIndex.value === null ? null : gameStore.currentPlayers[selectedPlayerIndex.value] ?? null
@@ -202,14 +217,10 @@ const endGame = async () => {
             <span class="p-score" :class="{ negative: player.score < 0 }">{{ player.score }}</span>
           </div>
 
-          <div v-if="Object.keys(player.triggeredEvents || {}).length" class="p-tags">
-            <span
-              v-for="(count, eventId) in player.triggeredEvents"
-              :key="eventId"
-              class="tag"
-            >
-              {{ gameStore.customEvents.find((e) => e.id === eventId)?.name || '?' }}
-              <b>{{ count }}</b>
+          <div v-if="playerTags[player.id]?.length" class="p-tags">
+            <span v-for="tag in playerTags[player.id]" :key="tag.id" class="tag">
+              {{ tag.name }}
+              <b>{{ tag.count }}</b>
             </span>
           </div>
         </article>

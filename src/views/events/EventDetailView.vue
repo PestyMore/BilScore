@@ -11,7 +11,7 @@ const route = useRoute();
 const router = useRouter();
 const eventId = route.params.id as string;
 const event = computed(() => gameStore.customEvents.find((e: CustomEvent) => e.id === eventId));
-const targetMap: Record<string, string> = {
+const TARGET_LABELS: Record<string, string> = {
   give_prev: '给上家分',
   take_prev: '吃上家分',
   give_all: '给所有人分',
@@ -66,7 +66,7 @@ const deleteEvent = async () => {
         </div>
         <div class="row static">
           <div class="row-main"><div class="row-title">结算方式</div></div>
-          <span class="value">{{ targetMap[event.targetType] || event.targetType }}</span>
+          <span class="value">{{ TARGET_LABELS[event.targetType] || event.targetType }}</span>
         </div>
         <div class="row static">
           <div class="row-main"><div class="row-title">换轮洗牌</div></div>

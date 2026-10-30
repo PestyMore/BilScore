@@ -6,14 +6,8 @@ import { appAlert } from '../../utils/dialog';
 import type { TargetType } from '../../types';
 import AppIcon from '../../components/AppIcon.vue';
 
-const router = useRouter();
-const name = ref('');
-const score = ref<number>(1);
-const targetType = ref<TargetType>('take_all');
-const isNextRound = ref(true);
-const isDropdownOpen = ref(false);
-
-const options: { value: TargetType; label: string }[] = [
+// 结算方式固定在模块级，避免每次渲染都重建数组
+const OPTIONS: { value: TargetType; label: string }[] = [
   { value: 'take_all', label: '吃所有人分' },
   { value: 'give_all', label: '给所有人分' },
   { value: 'take_prev', label: '吃上家分' },
@@ -22,7 +16,14 @@ const options: { value: TargetType; label: string }[] = [
   { value: 'give_custom', label: '给指定玩家分' },
 ];
 
-const currentOption = computed(() => options.find((o) => o.value === targetType.value));
+const router = useRouter();
+const name = ref('');
+const score = ref<number>(1);
+const targetType = ref<TargetType>('take_all');
+const isNextRound = ref(true);
+const isDropdownOpen = ref(false);
+
+const currentOption = computed(() => OPTIONS.find((o) => o.value === targetType.value));
 const canSave = computed(() => name.value.trim().length > 0 && Number.isFinite(score.value));
 
 const selectOption = (val: string) => {
@@ -72,7 +73,7 @@ const save = async () => {
           <transition name="fade">
             <div v-if="isDropdownOpen" class="menu">
               <button
-                v-for="opt in options"
+                v-for="opt in OPTIONS"
                 :key="opt.value"
                 class="menu-item"
                 :class="{ on: opt.value === targetType }"

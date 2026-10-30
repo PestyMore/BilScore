@@ -81,12 +81,18 @@ impl GameCore {
             return self.get_state();
         }
 
-        self.save_snapshot();
-
         let score = event.score;
         let prev_index = (player_index + self.current_players.len() - 1) % self.current_players.len();
         let target_index = target_id
             .and_then(|id| self.current_players.iter().position(|p| p.id == id));
+
+        // 指定目标类事件解析不到目标时，这一次触发什么都不做。
+        // 若仍入栈，撤销一次会"看起来没反应"，白白消耗一步撤销。
+        if matches!(event.target_type.as_str(), "take_custom" | "give_custom") && target_index.is_none() {
+            return self.get_state();
+        }
+
+        self.save_snapshot();
 
         match event.target_type.as_str() {
             "give_prev" => {
@@ -145,7 +151,8 @@ impl GameCore {
     // 换轮洗牌：赢家排第 1，输家排第 2，其余随机
     fn handle_shuffle(&mut self, player_idx: usize, prev_idx: usize, target_type: &str, target_custom_idx: Option<usize>) {
         // 少于 2 人时 winner/loser 会指向同一人，会造成玩家重复
-        if self.current_players.len() < 2 {
+        let len = self.current_players.len();
+        if len < 2 {
             return;
         }
 
@@ -164,45 +171,49 @@ impl GameCore {
              loser_idx = player_idx;
         }
 
-        // 使用 ID 来查找玩家，防止 clone 后的索引错位
-        // 这里的逻辑简化为：先把所有人按当前索引拿出来，然后重新组装
-        let players_backup = self.current_players.clone();
-
-        // 安全检查
-        if winner_idx >= players_backup.len() || loser_idx >= players_backup.len() || winner_idx == loser_idx {
+        if winner_idx >= len || loser_idx >= len || winner_idx == loser_idx {
             return;
         }
 
-        let winner = players_backup[winner_idx].clone();
-        let loser = players_backup[loser_idx].clone();
-
-        // 收集剩余玩家
-        let mut remaining: Vec<Player> = players_backup.into_iter()
-            .enumerate()
-            .filter(|(i, _)| *i != winner_idx && *i != loser_idx)
-            .map(|(_, p)| p)
-            .collect();
+        // 只取出 winner / loser 两个，剩下的就地打乱，全程不 clone 整个数组。
+        // 先移除下标大的再移除小的，避免第一次 remove 把第二次的下标带偏。
+        let winner_after_loser = winner_idx > loser_idx;
+        let (hi, lo) = if winner_after_loser {
+            (winner_idx, loser_idx)
+        } else {
+            (loser_idx, winner_idx)
+        };
+        let high = self.current_players.remove(hi);
+        let low = self.current_players.remove(lo);
+        let (winner, loser) = if winner_after_loser { (high, low) } else { (low, high) };
 
         let mut rng = thread_rng();
-        remaining.shuffle(&mut rng);
-
-        let mut new_order = vec![winner, loser];
-        new_order.extend(remaining);
-
-        self.current_players = new_order;
+        self.current_players.shuffle(&mut rng);
+        self.current_players.insert(0, loser);
+        self.current_players.insert(0, winner);
     }
 
     pub fn update_player_score(&mut self, player_id: String, new_score: i32) -> GameState {
+        let Some(idx) = self.current_players.iter().position(|p| p.id == player_id) else {
+            return self.get_state();
+        };
+        // 分数没变就不入栈，否则撤销一次会"看起来没反应"
+        if self.current_players[idx].score == new_score {
+            return self.get_state();
+        }
         self.save_snapshot();
-        if let Some(p) = self.current_players.iter_mut().find(|p| p.id == player_id) {
+        if let Some(p) = self.current_players.get_mut(idx) {
             p.score = new_score;
         }
         self.get_state()
     }
 
     pub fn replace_player(&mut self, old_id: String, new_player: Player) -> GameState {
+        let Some(idx) = self.current_players.iter().position(|p| p.id == old_id) else {
+            return self.get_state();
+        };
         self.save_snapshot();
-        if let Some(p) = self.current_players.iter_mut().find(|p| p.id == old_id) {
+        if let Some(p) = self.current_players.get_mut(idx) {
             p.id = new_player.id;
             p.name = new_player.name;
             p.avatar_color = new_player.avatar_color;
@@ -219,22 +230,35 @@ impl GameCore {
     }
 
     pub fn remove_player(&mut self, player_id: String) -> GameState {
+        let Some(idx) = self.current_players.iter().position(|p| p.id == player_id) else {
+            return self.get_state();
+        };
         self.save_snapshot();
-        self.current_players.retain(|p| p.id != player_id);
+        self.current_players.remove(idx);
         self.get_state()
     }
 
     pub fn reorder_players(&mut self, ordered_ids: Vec<String>) -> GameState {
-        self.save_snapshot();
         let mut new_list = Vec::new();
-        for id in ordered_ids {
-            if let Some(p) = self.current_players.iter().find(|p| p.id == id) {
+        for id in &ordered_ids {
+            if let Some(p) = self.current_players.iter().find(|p| p.id == *id) {
                 new_list.push(p.clone());
             }
         }
-        if new_list.len() == self.current_players.len() {
-            self.current_players = new_list;
+        // 长度对不上 = 传入的 id 列表有问题，保持原顺序不动
+        if new_list.len() != self.current_players.len() {
+            return self.get_state();
         }
+        // 顺序本来就没变，不浪费一步撤销
+        if new_list
+            .iter()
+            .zip(self.current_players.iter())
+            .all(|(a, b)| a.id == b.id)
+        {
+            return self.get_state();
+        }
+        self.save_snapshot();
+        self.current_players = new_list;
         self.get_state()
     }
 
@@ -344,8 +368,8 @@ mod tests {
 
         game.trigger_event("a", event("ranggan", "give_custom", 1, false), Some("nobody"));
         assert_eq!(scores(&game), vec![0, 0]);
-        // 未知目标不该污染撤销栈之外的状态
-        assert_eq!(game.history_stack.len(), 1);
+        // 什么都不做就不该占用一步撤销，否则撤销一次会"看起来没反应"
+        assert_eq!(game.history_stack.len(), 0);
     }
 
     #[test]
@@ -476,6 +500,38 @@ mod tests {
 
         assert_eq!(state.history_len, 0);
         assert!(fresh.undo().is_err());
+    }
+
+    #[test]
+    fn no_op_operations_do_not_consume_undo() {
+        let mut game = GameCore::new();
+        game.init_game(vec![player("a"), player("b")]);
+
+        // 改成一样的分数
+        game.update_player_score("a".to_string(), 0);
+        // 移除不存在的玩家
+        game.remove_player("ghost".to_string());
+        // 重排成和现在一样的顺序
+        game.reorder_players(vec!["a".into(), "b".into()]);
+
+        assert_eq!(game.history_stack.len(), 0);
+        assert!(game.undo().is_err());
+        assert_eq!(ids(&game), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn shuffle_keeps_every_player_exactly_once() {
+        let mut game = GameCore::new();
+        game.init_game(vec![player("a"), player("b"), player("c"), player("d")]);
+
+        for _ in 0..12 {
+            game.trigger_event("a", event("dajin", "take_all", 10, true), None);
+            assert_eq!(game.current_players.len(), 4);
+
+            let mut seen = ids(&game);
+            seen.sort();
+            assert_eq!(seen, vec!["a", "b", "c", "d"]);
+        }
     }
 
     #[test]

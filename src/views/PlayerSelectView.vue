@@ -21,6 +21,13 @@ const toggleSelect = (id: string) => {
 
 const isSelected = (id: string) => selectedIds.value.includes(id);
 
+const allSelected = computed(
+  () => selectedIds.value.length === gameStore.savedPlayers.length && selectedIds.value.length > 0
+);
+const toggleAll = () => {
+  selectedIds.value = allSelected.value ? [] : gameStore.savedPlayers.map((p) => p.id);
+};
+
 const startGame = async () => {
   if (!canStart.value) return;
   const players = selectedIds.value
@@ -63,6 +70,7 @@ const startGame = async () => {
         <div class="hint">
           <AppIcon name="target" :size="14" />
           <span>至少 2 人，选中顺序即为初始击球顺序</span>
+          <button class="hint-btn" @click="toggleAll">{{ allSelected ? '清空' : '全选' }}</button>
         </div>
 
         <div class="card list">
@@ -107,6 +115,19 @@ const startGame = async () => {
   padding: var(--s2) var(--s5) var(--s4);
   font-size: var(--f-sm);
   color: var(--text-3);
+}
+.hint-btn {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-size: var(--f-sm);
+  font-weight: 600;
+  cursor: pointer;
+  padding: var(--s1) var(--s2);
+}
+.hint-btn:active {
+  opacity: 0.5;
 }
 .list {
   margin: 0 var(--s4);

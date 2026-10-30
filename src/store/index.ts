@@ -99,7 +99,10 @@ export const gameStore = reactive({
       id: this.currentGameId,
       lastEdited: Date.now(),
       round: this.currentRound,
-      players: JSON.parse(JSON.stringify(this.currentPlayers)) as Player[],
+      // 这里不需要深拷贝：Rust 每次 invoke 都返回全新的 Player 对象，
+      // 不存在原地修改。原来每次点击都 JSON 一次全量玩家列表，纯浪费。
+      // 写盘时 JSON.stringify 本身就是快照。
+      players: this.currentPlayers,
     };
     const existingIdx = this.history.findIndex((h: GameHistory) => h.id === this.currentGameId);
     if (existingIdx > -1) this.history.splice(existingIdx, 1);
@@ -111,6 +114,12 @@ export const gameStore = reactive({
 
   /** 立即落盘：结束对局、页面隐藏、应用切后台时调用 */
   flushHistory() {
+    save(KEY_HISTORY, this.history);
+  },
+
+  deleteHistory(id: string) {
+    this.history = this.history.filter((h: GameHistory) => h.id !== id);
+    // 删除是明确操作，立即写盘，不等防抖
     save(KEY_HISTORY, this.history);
   },
 

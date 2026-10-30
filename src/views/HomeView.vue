@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { gameStore } from '../store';
 import { guard } from '../utils/invoke';
+import { appConfirm } from '../utils/dialog';
 import type { Player } from '../types';
 import AppIcon from '../components/AppIcon.vue';
 import PlayerAvatar from '../components/PlayerAvatar.vue';
@@ -45,6 +46,33 @@ const formatDate = (ts: number) => {
 const topOf = (players: Player[]): Player | null => {
   if (!players || players.length === 0) return null;
   return players.reduce((a, b) => (a.score > b.score ? a : b));
+};
+
+interface HistoryRow {
+  id: string;
+  date: string;
+  round: number;
+  players: Player[];
+  extra: number;
+  top: Player | null;
+}
+
+// 预计算日期与得分王：直接在模板里调 formatDate/topOf 会在每次重渲染时
+// 对每张卡片重复算好几遍（同一条记录里 topOf 就被调了 4 次）
+const records = computed<HistoryRow[]>(() =>
+  gameStore.history.map((h) => ({
+    id: h.id,
+    date: formatDate(h.lastEdited),
+    round: h.round,
+    players: h.players,
+    extra: h.players.length > 6 ? h.players.length - 6 : 0,
+    top: topOf(h.players),
+  }))
+);
+
+const removeRecord = async (id: string) => {
+  const ok = await appConfirm('确定删除这条对局记录？', '删除记录');
+  if (ok) gameStore.deleteHistory(id);
 };
 </script>
 
@@ -102,14 +130,21 @@ const topOf = (players: Player[]): Player | null => {
 
       <section v-else class="history">
         <article
-          v-for="record in gameStore.history"
+          v-for="record in records"
           :key="record.id"
           class="card match"
           @click="resumeMatch(record.id)"
         >
           <div class="match-head">
-            <span class="match-date">{{ formatDate(record.lastEdited) }}</span>
+            <span class="match-date">{{ record.date }}</span>
             <span class="chip">第 {{ record.round }} 轮</span>
+            <button
+              class="match-del"
+              aria-label="删除记录"
+              @click.stop="removeRecord(record.id)"
+            >
+              <AppIcon name="trash-2" :size="16" />
+            </button>
             <AppIcon name="chevron-right" :size="18" />
           </div>
 
@@ -123,15 +158,13 @@ const topOf = (players: Player[]): Player | null => {
                 :size="32"
                 class="avatars-item"
               />
-              <span v-if="record.players.length > 6" class="avatars-more">
-                +{{ record.players.length - 6 }}
-              </span>
+              <span v-if="record.extra" class="avatars-more">+{{ record.extra }}</span>
             </div>
-            <div v-if="topOf(record.players)" class="match-top">
+            <div v-if="record.top" class="match-top">
               <AppIcon name="crown" :size="15" />
-              <span class="match-top-name">{{ topOf(record.players)!.name }}</span>
-              <span class="match-top-score" :class="{ negative: topOf(record.players)!.score < 0 }">
-                {{ topOf(record.players)!.score }}
+              <span class="match-top-name">{{ record.top.name }}</span>
+              <span class="match-top-score" :class="{ negative: record.top.score < 0 }">
+                {{ record.top.score }}
               </span>
             </div>
           </div>
@@ -239,6 +272,23 @@ const topOf = (players: Player[]): Player | null => {
 }
 .match-head .chip {
   margin-left: auto;
+}
+.match-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  flex: none;
+}
+.match-del:active {
+  background: var(--surface-2);
+  color: var(--danger);
 }
 .match-body {
   display: flex;

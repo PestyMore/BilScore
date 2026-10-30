@@ -1,5 +1,44 @@
 # 📝 更新日志
 
+## v1.3.1（2026-10-31）· 优化打磨
+
+### ⚡ 性能
+
+- **去掉每次点击的全量深拷贝**：`store._updateHistoryList` 原来每次 invoke 都 `JSON.parse(JSON.stringify(...))` 整份玩家列表。Rust 每次都返回全新的 `Player` 对象、不存在原地修改，写盘时 `JSON.stringify` 本身就是快照，所以深拷贝是纯浪费。
+- **事件标签改为预计算**：原来在模板里遍历玩家的 `triggeredEvents`，每个标签都要 `customEvents.find()`（O(n)）。现在用 `playerTags` computed 一次算好，并且**按规则定义顺序渲染**——顺带修掉了标签顺序随 Rust `HashMap` 序列化顺序漂移的问题。
+- `availablePlayersForReplace` 的 `Array.includes` → `Set.has`（O(n·m) → O(n+m)）。
+- 首页历史卡片：把 `formatDate` / `topOf` 从模板里挪进 `records` computed。原来同一张卡片里 `topOf` 就会被算 4 次，每次重渲染又重算一遍。
+- `PlayerAvatar` 的深色渐变换算加缓存（头像颜色只有有限几十种）。
+- `EventCreateView` / `EventDetailView` 的常量数组与映射表提到模块级，不再每次渲染重建。
+- 构建：固定 `target: es2020`、关闭 gzip 体积报告（`reportCompressedSize: false`），构建更快、产物面向 iOS 14+ / Android WebView 基线。
+
+### ✅ 正确性
+
+撤销栈不再被"空操作"污染——以下情况现在**不会**占用一步撤销（否则点撤销会"看起来没反应"）：
+
+- 触发 `take_custom` / `give_custom` 但目标玩家不存在
+- 手动改分数但分数没变
+- 移除不存在的玩家
+- 重排顺序和当前顺序一致
+
+### ✨ 体验
+
+- **首页历史记录可删除**：卡片右上角新增删除按钮（带二次确认），历史不再只能堆到 10 条无法清理。
+- **选人页支持全选 / 清空**：人多了不用一个个点。
+
+### 🧪 测试
+
+Rust 单元测试 16 → **18 项**，新增：
+
+- `no_op_operations_do_not_consume_undo`：空操作不消耗撤销步数
+- `shuffle_keeps_every_player_exactly_once`：连续 12 次洗牌后玩家不丢不重（覆盖本次洗牌算法重写）
+
+### ♻️ 重构
+
+- `handle_shuffle` 去掉整个数组的 `clone()`，改为"取出赢家/输家 → 剩余就地去重打乱 → 头部插回"，全程零 clone，逻辑也更短。
+
+---
+
 ## v1.3.0（2026-10-30）· 视觉重构
 
 一次从「能用的 AI 味界面」到「统一设计系统」的重做。功能逻辑不变，视觉层全换。

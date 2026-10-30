@@ -12,6 +12,14 @@ export default defineConfig(async () => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
+  // 产物配置：目标定在 es2020（iOS 14+ / Android WebView 都够用），
+  // 关掉 gzip 体积报告可以明显加快构建（它要对每个产物再压一遍）
+  build: {
+    target: "es2020",
+    reportCompressedSize: false,
+    chunkSizeWarningLimit: 600,
+  },
+
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,

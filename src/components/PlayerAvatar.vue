@@ -19,12 +19,19 @@ const style = computed(() => ({
   backgroundImage: `linear-gradient(145deg, ${props.color}, ${shade(props.color)})`,
 }));
 
+// 头像颜色是有限的几十种，缓存掉解析与换算，避免每次重渲染都算一遍
+const shadeCache = new Map<string, string>();
+
 function shade(hex: string): string {
+  const cached = shadeCache.get(hex);
+  if (cached) return cached;
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex.trim());
   if (!m) return hex;
   const rgb = [1, 2, 3].map((i) => parseInt(m[i], 16));
   const dark = rgb.map((c) => Math.round(c * 0.66));
-  return `rgb(${dark[0]}, ${dark[1]}, ${dark[2]})`;
+  const result = `rgb(${dark[0]}, ${dark[1]}, ${dark[2]})`;
+  shadeCache.set(hex, result);
+  return result;
 }
 </script>
 
