@@ -4,25 +4,26 @@ import { useRouter } from 'vue-router';
 import { gameStore } from '../../store';
 import { appAlert } from '../../utils/dialog';
 import type { TargetType } from '../../types';
+import AppIcon from '../../components/AppIcon.vue';
 
 const router = useRouter();
 const name = ref('');
 const score = ref<number>(1);
 const targetType = ref<TargetType>('take_all');
 const isNextRound = ref(true);
-
 const isDropdownOpen = ref(false);
 
-const options = [
-  { value: 'take_all', label: '吃所有人分 (Take All)', icon: '🟢' },
-  { value: 'give_all', label: '给所有人分 (Give All)', icon: '🔴' },
-  { value: 'take_prev', label: '吃上家分', icon: '⬅️' },
-  { value: 'give_prev', label: '给上家分', icon: '➡️' },
-  { value: 'take_custom', label: '吃指定玩家分', icon: '🎯' },
-  { value: 'give_custom', label: '给指定玩家分', icon: '🎁' },
+const options: { value: TargetType; label: string }[] = [
+  { value: 'take_all', label: '吃所有人分' },
+  { value: 'give_all', label: '给所有人分' },
+  { value: 'take_prev', label: '吃上家分' },
+  { value: 'give_prev', label: '给上家分' },
+  { value: 'take_custom', label: '吃指定玩家分' },
+  { value: 'give_custom', label: '给指定玩家分' },
 ];
 
-const currentOption = computed(() => options.find(o => o.value === targetType.value));
+const currentOption = computed(() => options.find((o) => o.value === targetType.value));
+const canSave = computed(() => name.value.trim().length > 0 && Number.isFinite(score.value));
 
 const selectOption = (val: string) => {
   targetType.value = val as TargetType;
@@ -30,113 +31,236 @@ const selectOption = (val: string) => {
 };
 
 const save = async () => {
-  if (!name.value.trim()) return appAlert("请输入事件名称", "提示");
-  gameStore.addEvent({ id: Date.now().toString(), name: name.value.trim(), score: score.value, targetType: targetType.value, isNextRound: isNextRound.value });
+  if (!name.value.trim()) return appAlert('请输入规则名称', '提示');
+  if (!Number.isFinite(score.value)) return appAlert('请输入有效分数', '提示');
+  gameStore.addEvent({
+    id: Date.now().toString(),
+    name: name.value.trim(),
+    score: Math.trunc(score.value),
+    targetType: targetType.value,
+    isNextRound: isNextRound.value,
+  });
   router.back();
 };
 </script>
 
 <template>
-  <div class="page-container">
-    <div class="top-bar">
-      <button class="icon-btn" @click="router.back()">取消</button>
-      <h2>新建事件</h2>
-      <button class="icon-btn" style="font-weight: 600;" @click="save">保存</button>
-    </div>
-    
-    <div class="form-container">
-      <div class="form-section">
-        <div class="input-group">
-          <label>事件名称</label>
-          <input v-model="name" placeholder="例如：大金" type="text" />
-        </div>
+  <div class="page">
+    <header class="nav-bar">
+      <div class="nav-side">
+        <button class="text-btn" @click="router.back()">取消</button>
       </div>
+      <div class="nav-title">新建规则</div>
+      <div class="nav-side right">
+        <button class="text-btn strong" :disabled="!canSave" @click="save">保存</button>
+      </div>
+    </header>
 
-      <!-- 核心修复：overflow: visible 确保下拉不被切掉，z-index 确保覆盖下方元素 -->
-      <div class="form-section" style="overflow: visible; z-index: 10;">
-        <div class="input-group">
-          <label>记分规则</label>
-          <div class="custom-select" @click="isDropdownOpen = !isDropdownOpen">
-            <span class="selected-val">
-              <span class="opt-icon">{{ currentOption?.icon }}</span> {{ currentOption?.label }}
-            </span>
-            <span class="arrow" :class="{ rotated: isDropdownOpen }">▼</span>
-          </div>
-          
+    <div class="scroll">
+      <div class="card form">
+        <div class="cell">
+          <label>规则名称</label>
+          <input v-model="name" class="input" placeholder="例如：大金" maxlength="10" />
+        </div>
+
+        <div class="cell split">
+          <label>记分方式</label>
+          <button class="select" @click="isDropdownOpen = !isDropdownOpen">
+            <span>{{ currentOption?.label }}</span>
+            <AppIcon name="chevron-down" :size="18" :class="{ rotate: isDropdownOpen }" />
+          </button>
           <transition name="fade">
-            <div v-if="isDropdownOpen" class="dropdown-menu">
-              <div v-for="opt in options" :key="opt.value" 
-                   class="dropdown-item" 
-                   :class="{ active: opt.value === targetType }"
-                   @click.stop="selectOption(opt.value)">
-                <span class="opt-icon">{{ opt.icon }}</span>
+            <div v-if="isDropdownOpen" class="menu">
+              <button
+                v-for="opt in options"
+                :key="opt.value"
+                class="menu-item"
+                :class="{ on: opt.value === targetType }"
+                @click.stop="selectOption(opt.value)"
+              >
                 <span>{{ opt.label }}</span>
-                <span v-if="opt.value === targetType" class="check">✓</span>
-              </div>
+                <AppIcon v-if="opt.value === targetType" name="check" :size="16" :stroke="2.4" />
+              </button>
             </div>
           </transition>
         </div>
 
-        <div class="input-group border-top">
+        <div class="cell">
           <label>分数变动</label>
-          <input type="number" v-model.number="score" min="1" class="score-input" />
+          <input v-model.number="score" type="number" min="1" class="input num" />
         </div>
       </div>
 
-      <div class="form-section toggle-section" @click="isNextRound = !isNextRound">
-        <label>进入下一轮 (重新洗牌)</label>
-        <div class="ios-switch" :class="{ active: isNextRound }">
-          <div class="knob"></div>
+      <div class="switch-row" @click="isNextRound = !isNextRound">
+        <div>
+          <div class="switch-title">换轮并重新洗牌</div>
+          <div class="switch-sub">开启后，触发该规则会进入下一轮</div>
+        </div>
+        <div class="switch" :class="{ on: isNextRound }">
+          <span class="knob"></span>
         </div>
       </div>
+
+      <div class="bottom-bar">
+        <button class="btn btn-primary btn-block" :disabled="!canSave" @click="save">
+          <AppIcon name="check" :size="19" />
+          <span>保存规则</span>
+        </button>
+      </div>
     </div>
-    
-    <div v-if="isDropdownOpen" class="fullscreen-mask" @click="isDropdownOpen = false"></div>
+
+    <div v-if="isDropdownOpen" class="mask" @click="isDropdownOpen = false"></div>
   </div>
 </template>
 
 <style scoped>
-.form-container { display: flex; flex-direction: column; gap: 24px; margin-top: 10px; }
-.form-section { background: var(--glass); border-radius: 12px; border: var(--glass-border); position: relative; }
-.input-group { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; position: relative; }
-.border-top { border-top: 1px solid rgba(128,128,128,0.1); }
-label { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-left: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
-
-input { background: transparent !important; border: none !important; box-shadow: none !important; padding: 8px 0; font-size: 19px; font-weight: 500; border-radius: 0; }
-
-.custom-select { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; cursor: pointer; }
-.selected-val { font-size: 19px; font-weight: 500; display: flex; align-items: center; gap: 10px; color: var(--text-main); }
-.arrow { color: var(--text-muted); font-size: 12px; transition: transform 0.3s; }
-.arrow.rotated { transform: rotate(180deg); }
-.opt-icon { font-size: 18px; }
-
-/* 下拉菜单样式优化：更高的z-index，背景模糊 */
-.dropdown-menu {
-  position: absolute; top: 100%; left: -5px; right: -5px; z-index: 999;
-  background: var(--glass-modal);
-  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 14px;
-  margin-top: 10px;
-  padding: 8px;
-  box-shadow: 0 15px 50px rgba(0,0,0,0.6);
-  display: flex; flex-direction: column; gap: 4px;
+.form {
+  margin: var(--s2) var(--s4) var(--s5);
+  overflow: visible;
 }
-.dropdown-item {
-  padding: 14px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 16px; transition: 0.2s;
+.cell {
+  position: relative;
+  padding: var(--s3) var(--s4);
 }
-.dropdown-item:active { background: rgba(128,128,128,0.15); }
-.dropdown-item.active { background: rgba(0, 122, 255, 0.15); color: var(--primary); font-weight: 600; }
-.check { margin-left: auto; font-weight: bold; }
+.cell + .cell {
+  border-top: 1px solid var(--border);
+}
+.cell.split {
+  overflow: visible;
+  z-index: 5;
+}
+.cell label {
+  display: block;
+  font-size: var(--f-sm);
+  color: var(--text-2);
+  margin-bottom: var(--s2);
+}
+.input {
+  width: 100%;
+  height: 34px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-1);
+  font-size: var(--f-md);
+  font-weight: 500;
+}
+.input::placeholder {
+  color: var(--text-3);
+}
+.input.num {
+  font-variant-numeric: tabular-nums;
+}
+.select {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font-size: var(--f-md);
+  font-weight: 500;
+  cursor: pointer;
+}
+.select :deep(.app-icon) {
+  color: var(--text-3);
+  transition: transform var(--d1) var(--ease);
+}
+.select :deep(.app-icon.rotate) {
+  transform: rotate(180deg);
+}
+.menu {
+  position: absolute;
+  left: var(--s3);
+  right: var(--s3);
+  top: calc(100% - var(--s1));
+  z-index: 20;
+  padding: var(--s1);
+  border-radius: var(--r-md);
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 var(--s3);
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-1);
+  font-size: var(--f-base);
+  cursor: pointer;
+}
+.menu-item:active {
+  background: var(--surface-2);
+}
+.menu-item.on {
+  color: var(--primary);
+  font-weight: 600;
+}
 
-.fullscreen-mask { position: fixed; inset: 0; z-index: 5; }
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  margin: 0 var(--s4);
+  padding: var(--s4);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  cursor: pointer;
+}
+.switch-title {
+  font-size: var(--f-base);
+  font-weight: 600;
+}
+.switch-sub {
+  margin-top: 2px;
+  font-size: var(--f-sm);
+  color: var(--text-2);
+}
+.switch {
+  width: 51px;
+  height: 31px;
+  border-radius: var(--r-full);
+  background: var(--surface-3);
+  position: relative;
+  flex: none;
+  transition: background var(--d2) var(--ease);
+}
+.switch.on {
+  background: var(--success);
+}
+.knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: var(--r-full);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform var(--d2) var(--ease);
+}
+.switch.on .knob {
+  transform: translateX(20px);
+}
 
-/* Toggle */
-.toggle-section { padding: 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
-.toggle-section label { font-size: 17px; color: var(--text-main); text-transform: none; letter-spacing: 0; margin: 0; }
-.ios-switch { width: 51px; height: 31px; background: rgba(120, 120, 128, 0.16); border-radius: 15.5px; position: relative; transition: 0.3s; }
-[data-theme="dark"] .ios-switch { background: rgba(120, 120, 128, 0.32); }
-.ios-switch.active { background: var(--success); }
-.knob { width: 27px; height: 27px; background: white; border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: 0.3s cubic-bezier(0.25, 0.1, 0.25, 1); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-.ios-switch.active .knob { transform: translateX(20px); }
+.mask {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+}
+.bottom-bar {
+  margin-top: var(--s6);
+  border-top: none;
+}
 </style>

@@ -1,71 +1,118 @@
-name: Build iOS Unsigned IPA
+name: Build iOS
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: '构建版本：public（通用）或 personal（内置规则）'
+        required: true
+        default: 'public'
+        type: choice
+        options:
+          - public
+          - personal
+      sign:
+        description: '是否使用仓库 Secrets 进行真机签名（否则输出未签名 IPA，需 AltStore/SideStore 侧载）'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-ios:
+    name: iOS (${{ inputs.mode || 'public' }})
     runs-on: macos-latest
-    
+
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri -> target'
 
-      - name: Build Vue Frontend
-        run: npm run build
+      - name: Install Frontend Deps
+        run: npm ci
+
+      # Vite 只从 .env 文件读取 VITE_* 变量，直接写 env: 无效，必须落盘
+      - name: Write Build Mode
+        run: echo "VITE_APP_MODE=${{ inputs.mode || 'public' }}" > .env
 
       - name: Init Tauri iOS
         run: npx tauri ios init
 
-      - name: Patch Xcode Project (物理阉割签名限制)
-        # 核心魔法：使用 sed 命令强行修改 Xcode 工程底层的配置文件
-        # 把自动签名改为手动，并清空所有开发者团队要求，骗过 Xcode 的预检查
+      # ---- 签名准备：只有勾选 sign 且 Secret 齐全时才执行 ----
+      - name: Import Code Signing Certs
+        if: ${{ inputs.sign }}
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          keychain-password: ${{ secrets.KEYCHAIN_PASSWORD }}
+
+      - name: Install Provisioning Profile
+        if: ${{ inputs.sign }}
+        env:
+          PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "$PROFILE_BASE64" | base64 -d > "$HOME/Library/MobileDevice/Provisioning Profiles/bilscore.mobileprovision"
+
+      - name: Configure Manual Signing
+        if: ${{ inputs.sign }}
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cd src-tauri/gen/apple/bilscore.xcodeproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' project.pbxproj
+          sed -i '' "s/DEVELOPMENT_TEAM = \"[^\"]*\";/DEVELOPMENT_TEAM = $TEAM_ID;/g" project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development";/CODE_SIGN_IDENTITY = "Apple Development";/g' project.pbxproj
+
+      - name: Build App (signed)
+        if: ${{ inputs.sign }}
+        run: npx tauri ios build --target aarch64
+
+      # 未签名路径：保留原有的“物理阉割签名限制”方案，产物给 AltStore / SideStore 侧载
+      - name: Build App (unsigned)
+        if: ${{ !inputs.sign }}
+        env:
+          CODE_SIGNING_ALLOWED: "NO"
+          CODE_SIGNING_REQUIRED: "NO"
+          CODE_SIGN_IDENTITY: ""
         run: |
           cd src-tauri/gen/apple/bilscore.xcodeproj
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' project.pbxproj
           sed -i '' 's/CODE_SIGN_IDENTITY = ".*";/CODE_SIGN_IDENTITY = "";/g' project.pbxproj
           sed -i '' 's/DEVELOPMENT_TEAM = ".*";/DEVELOPMENT_TEAM = "";/g' project.pbxproj
+          cd "$GITHUB_WORKSPACE"
+          npx tauri ios build --target aarch64
 
-      - name: Build App via Tauri
-        # 给底层环境注入全局免签变量，配合上面的修改，Xcode 就会乖乖编译出完整的 App
-        env:
-          CODE_SIGNING_ALLOWED: "NO"
-          CODE_SIGNING_REQUIRED: "NO"
-          CODE_SIGN_IDENTITY: ""
-        run: npx tauri ios build --target aarch64 || true
-
-      - name: Package into IPA
+      - name: Package IPA
         run: |
-          mkdir -p Payload
-          
-          echo "🔍 正在寻找编译好的 .app 文件..."
           APP_PATH=$(find src-tauri/gen/apple -type d -name "*.app" | grep -v "Debug" | head -n 1)
-          
           if [ -z "$APP_PATH" ]; then
-            echo "❌ 错误：未能找到 .app 文件！"
+            echo "::error::未找到 .app 产物，构建失败"
             exit 1
           fi
-          
-          echo "✅ 成功找到 App: $APP_PATH"
-          echo "📦 正在打包 IPA..."
+          echo "找到 App: $APP_PATH"
+          mkdir -p Payload
           cp -r "$APP_PATH" Payload/
-          zip -r bilscore.ipa Payload
+          zip -qr bilscore.ipa Payload
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bilscore-unsigned-ipa
+          name: bilscore-ios-${{ inputs.mode || 'public' }}-${{ inputs.sign && 'signed' || 'unsigned' }}
           path: bilscore.ipa
+          if-no-files-found: error

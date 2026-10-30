@@ -2,83 +2,142 @@
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { gameStore } from '../store';
-import { getAvatarText } from '../utils/avatar';
+import { guard } from '../utils/invoke';
+import AppIcon from '../components/AppIcon.vue';
+import PlayerAvatar from '../components/PlayerAvatar.vue';
+import EmptyState from '../components/EmptyState.vue';
 
 const router = useRouter();
 const selectedIds = ref<string[]>([]);
+const starting = ref(false);
 
-// 只要大于等于2人即可开始
-const canStart = computed(() => selectedIds.value.length >= 2);
+const canStart = computed(() => selectedIds.value.length >= 2 && !starting.value);
 
 const toggleSelect = (id: string) => {
-  if (selectedIds.value.includes(id)) {
-    selectedIds.value = selectedIds.value.filter(i => i !== id);
-  } else {
-    selectedIds.value.push(id);
-  }
+  const i = selectedIds.value.indexOf(id);
+  if (i === -1) selectedIds.value.push(id);
+  else selectedIds.value.splice(i, 1);
 };
 
-const startGame = () => {
+const isSelected = (id: string) => selectedIds.value.includes(id);
+
+const startGame = async () => {
   if (!canStart.value) return;
-  const players = selectedIds.value.map(id => gameStore.savedPlayers.find(p => p.id === id)!).filter(Boolean);
-  gameStore.initNewGame(players);
-  router.replace('/game');
+  const players = selectedIds.value
+    .map((id) => gameStore.savedPlayers.find((p) => p.id === id))
+    .filter(Boolean) as typeof gameStore.savedPlayers;
+  starting.value = true;
+  const ok = await guard(gameStore.initNewGame(players), '开局失败，请重试');
+  starting.value = false;
+  if (ok) router.replace('/game');
 };
 </script>
 
 <template>
-  <div class="page-container">
-    <div class="top-bar">
-      <button class="icon-btn" @click="router.back()">返回</button>
-      <h2>挑选参赛玩家</h2>
-      <div style="width: 40px"></div>
-    </div>
+  <div class="page">
+    <header class="nav-bar">
+      <div class="nav-side">
+        <button class="icon-btn ghost" @click="router.back()" aria-label="返回">
+          <AppIcon name="arrow-left" :size="20" />
+        </button>
+      </div>
+      <div class="nav-title">挑选参赛玩家</div>
+      <div class="nav-side right">
+        <span class="chip" :class="{ primary: canStart }">已选 {{ selectedIds.length }}</span>
+      </div>
+    </header>
 
-    <!-- 玩家库为空警告 -->
-    <div v-if="gameStore.savedPlayers.length === 0" class="warning-box">
-      <div class="icon">⚠️</div>
-      <p>玩家库为空，无法开始比赛。</p>
-      <button class="btn btn-primary mt-btn" @click="router.push('/players/new')">去创建玩家</button>
-    </div>
+    <template v-if="gameStore.savedPlayers.length === 0">
+      <div class="pad">
+        <EmptyState icon="users" title="玩家库还是空的" desc="先添加至少两位玩家，才能开始一局比赛。">
+          <button class="btn btn-primary btn-block" @click="router.push('/players/new')">
+            <AppIcon name="plus" :size="18" />
+            <span>新建玩家</span>
+          </button>
+        </EmptyState>
+      </div>
+    </template>
 
     <template v-else>
-      <div class="selection-status">
-        已选：<span :class="{ 'ready': canStart }">{{ selectedIds.length }} 人</span> (最少2人)
-      </div>
+      <div class="scroll">
+        <div class="hint">
+          <AppIcon name="target" :size="14" />
+          <span>至少 2 人，选中顺序即为初始击球顺序</span>
+        </div>
 
-      <div class="list">
-        <div v-for="p in gameStore.savedPlayers" :key="p.id" 
-             class="list-item" :class="{ active: selectedIds.includes(p.id) }" 
-             @click="toggleSelect(p.id)">
-          <div class="avatar" :style="{ backgroundColor: p.avatarColor }">{{ getAvatarText(p.name) }}</div>
-          <span class="name">{{ p.name }}</span>
-          <div class="checkbox">
-            <span v-if="selectedIds.includes(p.id)">✔️</span>
+        <div class="card list">
+          <div
+            v-for="p in gameStore.savedPlayers"
+            :key="p.id"
+            class="row"
+            :class="{ selected: isSelected(p.id) }"
+            @click="toggleSelect(p.id)"
+          >
+            <PlayerAvatar :name="p.name" :color="p.avatarColor" :size="38" />
+            <div class="row-main">
+              <div class="row-title">{{ p.name }}</div>
+            </div>
+            <div class="tick" :class="{ on: isSelected(p.id) }">
+              <AppIcon v-if="isSelected(p.id)" name="check" :size="16" :stroke="2.4" />
+            </div>
           </div>
         </div>
+
+        <div class="bottom-space"></div>
       </div>
 
-      <button class="btn btn-primary btn-start" :disabled="!canStart" @click="startGame">
-        开始比赛
-      </button>
+      <div class="bottom-bar">
+        <button class="btn btn-primary btn-block" :disabled="!canStart" @click="startGame">
+          <AppIcon name="play" :size="19" />
+          <span>{{ starting ? '正在开局…' : '开始比赛' }}</span>
+        </button>
+      </div>
     </template>
   </div>
 </template>
 
 <style scoped>
-.warning-box { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--text-muted); background: var(--glass); border-radius: 20px; padding: 30px; }
-.warning-box .icon { font-size: 40px; margin-bottom: 15px; }
-.mt-btn { margin-top: 25px; width: 100%; }
-.selection-status { text-align: center; font-size: 14px; color: var(--text-muted); margin-bottom: 15px; }
-.selection-status .ready { color: var(--success); font-weight: bold; }
-.list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px; }
-.list-item { background: var(--glass); padding: 16px; border-radius: 16px; border: 2px solid transparent; display: flex; align-items: center; gap: 15px; transition: 0.2s; cursor: pointer; }
-.list-item.active { border-color: var(--primary); background: rgba(0, 168, 255, 0.1); }
-.list-item:active { transform: scale(0.98); }
-.avatar { width: 40px; height: 40px; border-radius: 20px; color: white; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: bold; }
-.name { flex: 1; font-size: 17px; font-weight: 500; }
-.checkbox { width: 24px; height: 24px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.3); display: flex; align-items: center; justify-content: center; font-size: 12px; }
-.active .checkbox { background: var(--primary); border-color: var(--primary); }
-.btn-start { padding: 18px; border-radius: 16px; font-size: 18px; }
-.btn-start:disabled { background: var(--glass); color: var(--text-muted); opacity: 0.6; }
+.pad {
+  padding: 0 var(--s4);
+}
+.hint {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s5) var(--s4);
+  font-size: var(--f-sm);
+  color: var(--text-3);
+}
+.list {
+  margin: 0 var(--s4);
+  overflow: hidden;
+}
+.list .row:first-child {
+  border-radius: var(--r-md) var(--r-md) 0 0;
+}
+.list .row:last-child {
+  border-radius: 0 0 var(--r-md) var(--r-md);
+}
+.row.selected {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+.tick {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-full);
+  border: 1.8px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex: none;
+  transition: background var(--d1) var(--ease), border-color var(--d1) var(--ease);
+}
+.tick.on {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.bottom-space {
+  height: var(--s6);
+}
 </style>

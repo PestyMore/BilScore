@@ -28,4 +28,7 @@ pub struct GameState {
     pub id: String,
     pub round: i32,
     pub players: Vec<Player>,
+    /// 当前可撤销的步数。前端据此禁用撤销按钮，不再用"长度为 1 的假数组"糊弄。
+    #[serde(rename = "historyLen")]
+    pub history_len: usize,
 }

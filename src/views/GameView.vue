@@ -2,19 +2,18 @@
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { gameStore } from '../store';
-import { getAvatarText } from '../utils/avatar';
 import { appConfirm, appAlert } from '../utils/dialog';
+import { guard } from '../utils/invoke';
 import { triggerFireworks } from '../utils/fx';
 import { AppConfig } from '../config';
-import iconAdd from '../assets/icons/add.png';
-import iconSort from '../assets/icons/sort.png';
-import iconUndo from '../assets/icons/undo.png';
-import iconEnd from '../assets/icons/end.png';
-import iconReplace from '../assets/icons/replace.png';
-import iconRemove from '../assets/icons/remove.png';
+import type { CustomEvent } from '../types';
+import AppIcon from '../components/AppIcon.vue';
+import PlayerAvatar from '../components/PlayerAvatar.vue';
 
 const router = useRouter();
 const selectedPlayerIndex = ref<number | null>(null);
+// 事件提交锁：invoke 期间禁止再次点击，避免连点造成重复记分
+const isSubmitting = ref(false);
 const isMainModalOpen = ref(false);
 const modalTab = ref<'events' | 'manage'>('events');
 const editScore = ref(0);
@@ -24,231 +23,374 @@ const isReplaceModalOpen = ref(false);
 const isReorderModalOpen = ref(false);
 const reorderSelection = ref<string[]>([]);
 
-const positiveEvents = computed(() => gameStore.customEvents.filter(e => e.targetType.includes('take')));
-const negativeEvents = computed(() => gameStore.customEvents.filter(e => e.targetType.includes('give')));
+const positiveEvents = computed(() => gameStore.customEvents.filter((e) => e.targetType.includes('take')));
+const negativeEvents = computed(() => gameStore.customEvents.filter((e) => e.targetType.includes('give')));
 const availablePlayersForReplace = computed(() => {
-  const inGameIds = gameStore.currentPlayers.map(p => p.id);
-  return gameStore.savedPlayers.filter(sp => !inGameIds.includes(sp.id));
+  const inGameIds = gameStore.currentPlayers.map((p) => p.id);
+  return gameStore.savedPlayers.filter((sp) => !inGameIds.includes(sp.id));
 });
+const selectedPlayer = computed(() =>
+  selectedPlayerIndex.value === null ? null : gameStore.currentPlayers[selectedPlayerIndex.value] ?? null
+);
 
 const openMainModal = (index: number) => {
   selectedPlayerIndex.value = index;
   editScore.value = gameStore.currentPlayers[index].score;
-  modalTab.value = 'events'; pendingCustomEventId.value = null; isMainModalOpen.value = true;
+  modalTab.value = 'events';
+  pendingCustomEventId.value = null;
+  isMainModalOpen.value = true;
 };
 
 const closeAllModals = () => {
-  isMainModalOpen.value = false; isAddPlayerModalOpen.value = false; isReplaceModalOpen.value = false; isReorderModalOpen.value = false;
-  selectedPlayerIndex.value = null; pendingCustomEventId.value = null;
+  isMainModalOpen.value = false;
+  isAddPlayerModalOpen.value = false;
+  isReplaceModalOpen.value = false;
+  isReorderModalOpen.value = false;
+  selectedPlayerIndex.value = null;
+  pendingCustomEventId.value = null;
 };
 
-const handleEventClick = (eventId: string) => {
-  const ev = gameStore.customEvents.find(e => e.id === eventId);
-  if (ev) {
-    if (ev.targetType.includes('custom')) {
-        pendingCustomEventId.value = eventId; 
-    } else { 
-        gameStore.triggerEvent(selectedPlayerIndex.value!, eventId);
-        if (ev.targetType.includes('take') && ev.isNextRound) {
-            triggerFireworks();
-        }
-        closeAllModals(); 
-    }
-  }
-};
+// 只有大金/小金这类高分事件才放烟花，普胜、黄金9 不再每次换轮都铺满全屏粒子
+const shouldFireworks = (ev?: CustomEvent) =>
+  !!ev && ev.targetType.includes('take') && ev.isNextRound && ev.score >= 7;
 
-const confirmCustomTarget = (targetIndex: number) => {
-  const ev = gameStore.customEvents.find(e => e.id === pendingCustomEventId.value);
-  gameStore.triggerEvent(selectedPlayerIndex.value!, pendingCustomEventId.value!, targetIndex);
-  if (ev && ev.targetType.includes('take') && ev.isNextRound) {
-      triggerFireworks();
+// 事件一律按玩家 id 寻址：洗牌会重排数组，用下标在异步往返期间会指向别人
+const currentPlayerId = (): string => selectedPlayer.value?.id ?? '';
+
+const handleEventClick = async (eventId: string) => {
+  const ev = gameStore.customEvents.find((e) => e.id === eventId);
+  if (!ev || isSubmitting.value) return;
+
+  if (ev.targetType.includes('custom')) {
+    pendingCustomEventId.value = eventId;
+    return;
   }
+
+  const playerId = currentPlayerId();
+  if (!playerId) return closeAllModals();
+
+  isSubmitting.value = true;
+  const ok = await guard(gameStore.triggerEvent(playerId, eventId), '触发事件失败，请重试');
+  isSubmitting.value = false;
+
+  if (!ok) return;
+  if (shouldFireworks(ev)) triggerFireworks();
   closeAllModals();
 };
 
-const saveScoreEdit = () => {
-  if (selectedPlayerIndex.value !== null) gameStore.updatePlayerScore(gameStore.currentPlayers[selectedPlayerIndex.value].id, editScore.value);
+const confirmCustomTarget = async (targetId: string) => {
+  if (isSubmitting.value) return;
+  const ev = gameStore.customEvents.find((e) => e.id === pendingCustomEventId.value);
+  const playerId = currentPlayerId();
+  const eventId = pendingCustomEventId.value;
+  if (!playerId || !eventId) return closeAllModals();
+
+  isSubmitting.value = true;
+  const ok = await guard(gameStore.triggerEvent(playerId, eventId, targetId), '触发事件失败，请重试');
+  isSubmitting.value = false;
+
+  if (ok && shouldFireworks(ev)) triggerFireworks();
+  closeAllModals();
+};
+
+const saveScoreEdit = async () => {
+  const player = selectedPlayer.value;
+  if (!player) return closeAllModals();
+
+  const next = Number(editScore.value);
+  // 输入框清空会得到 NaN，直接传下去会让 Rust 侧反序列化失败
+  if (!Number.isFinite(next)) return appAlert('请输入有效的分数', '提示');
+
+  await guard(gameStore.updatePlayerScore(player.id, Math.trunc(next)), '保存分数失败');
   closeAllModals();
 };
 
 const removeCurrentPlayer = async () => {
-  if (gameStore.currentPlayers.length <= 2) return appAlert("最少需要2名玩家才能继续！");
+  if (gameStore.currentPlayers.length <= 2) return appAlert('最少需要 2 名玩家才能继续！', '提示');
   const confirmed = await appConfirm('确定要将该玩家移出当前对局吗？', '移出玩家');
-  if (confirmed) { gameStore.removePlayerMidGame(gameStore.currentPlayers[selectedPlayerIndex.value!].id); closeAllModals(); }
+  if (!confirmed) return;
+  const ok = await guard(gameStore.removePlayerMidGame(selectedPlayer.value!.id), '移出玩家失败');
+  if (ok) closeAllModals();
 };
 
-const confirmReplace = (id: string) => {
-  const sp = gameStore.savedPlayers.find(p => p.id === id);
-  if (sp) gameStore.replacePlayer(gameStore.currentPlayers[selectedPlayerIndex.value!].id, sp); closeAllModals();
+const confirmReplace = async (id: string) => {
+  const sp = gameStore.savedPlayers.find((p) => p.id === id);
+  if (!sp) return;
+  await guard(gameStore.replacePlayer(selectedPlayer.value!.id, sp), '替换玩家失败');
+  closeAllModals();
 };
 
-const confirmAddMidGame = (id: string) => {
-  const sp = gameStore.savedPlayers.find(p => p.id === id);
-  if (sp) gameStore.addPlayerMidGame(sp); closeAllModals();
+const confirmAddMidGame = async (id: string) => {
+  const sp = gameStore.savedPlayers.find((p) => p.id === id);
+  if (!sp) return;
+  await guard(gameStore.addPlayerMidGame(sp), '添加玩家失败');
+  closeAllModals();
 };
 
-const openReorderModal = () => { reorderSelection.value = []; isReorderModalOpen.value = true; };
+const openReorderModal = () => {
+  reorderSelection.value = [];
+  isReorderModalOpen.value = true;
+};
 const toggleReorderSelect = (id: string) => {
-  const idx = reorderSelection.value.indexOf(id);
-  if (idx === -1) reorderSelection.value.push(id); else reorderSelection.value.splice(idx, 1);
+  const i = reorderSelection.value.indexOf(id);
+  if (i === -1) reorderSelection.value.push(id);
+  else reorderSelection.value.splice(i, 1);
+};
+const confirmReorder = async () => {
+  if (reorderSelection.value.length !== gameStore.currentPlayers.length) return;
+  await guard(gameStore.applyCustomOrder(reorderSelection.value), '排序失败');
+  isReorderModalOpen.value = false;
 };
 
-const confirmReorder = () => {
-  if (reorderSelection.value.length === gameStore.currentPlayers.length) { gameStore.applyCustomOrder(reorderSelection.value); isReorderModalOpen.value = false; }
+const undoAction = async () => {
+  await guard(gameStore.undoLastAction(), '没有可撤销的操作');
 };
 
-const endGame = async () => { 
-  const confirmed = await appConfirm("确定要结束本局并保存记录吗？", "结束对局");
-  if (confirmed) { gameStore.endAndSaveGame(); router.replace('/'); } 
+const endGame = async () => {
+  const confirmed = await appConfirm('确定要结束本局并保存记录吗？', '结束对局');
+  if (confirmed) {
+    gameStore.endAndSaveGame();
+    router.replace('/');
+  }
 };
 </script>
 
 <template>
-  <div class="game-view-wrapper">
-    <div class="game-header">
-      <div class="round-display">
-        <span class="r-label">Round</span>
-        <span class="r-num">{{ gameStore.currentRound }}</span>
+  <div class="page game">
+    <header class="game-bar">
+      <div class="round">
+        <span class="round-label">ROUND</span>
+        <span class="round-num">{{ gameStore.currentRound }}</span>
       </div>
-      <div class="control-actions">
-        <button class="img-btn" @click="isAddPlayerModalOpen = true">
-          <img :src="iconAdd" alt="加人" class="adaptive-icon" />
+
+      <div class="tools">
+        <button class="icon-btn" @click="isAddPlayerModalOpen = true" aria-label="加人">
+          <AppIcon name="user-plus" :size="19" />
         </button>
-        <button class="img-btn" @click="openReorderModal">
-          <img :src="iconSort" alt="排序" class="adaptive-icon" />
+        <button class="icon-btn" @click="openReorderModal" aria-label="排序">
+          <AppIcon name="arrow-down-up" :size="19" />
         </button>
-        <button class="img-btn" :disabled="gameStore.historySnapshots.length === 0" @click="gameStore.undoLastAction()">
-          <img :src="iconUndo" alt="撤销" class="adaptive-icon" />
+        <button
+          class="icon-btn"
+          :disabled="gameStore.historyLen === 0"
+          @click="undoAction"
+          aria-label="撤销"
+        >
+          <AppIcon name="undo-2" :size="19" />
         </button>
-        <button class="img-btn" @click="endGame">
-          <img :src="iconEnd" alt="结束" class="adaptive-icon" />
+        <button class="icon-btn" @click="endGame" aria-label="结束对局">
+          <AppIcon name="flag" :size="19" />
         </button>
       </div>
-    </div>
-    
-    <div class="players-scroll-area">
-      <div class="players-grid-container">
-        <!-- 玩家卡片容器 -->
-        <div v-for="(player, index) in gameStore.currentPlayers" :key="player.id" class="p-card-wrapper" @click="openMainModal(index)">
-          <div class="p-card-content">
-            <div class="p-header">
-              <div class="p-info-group">
-                <div class="p-rank">#{{ index + 1 }}</div>
-                <div class="p-avatar" :style="{ backgroundColor: player.avatarColor }">{{ getAvatarText(player.name) }}</div>
-                <div class="p-name">{{ player.name }}</div>
-              </div>
-              <div class="p-score" :class="{ 'is-negative': player.score < 0 }">{{ player.score }}</div>
+    </header>
+
+    <div class="scroll">
+      <div class="cards">
+        <article
+          v-for="(player, index) in gameStore.currentPlayers"
+          :key="player.id"
+          class="p-card"
+          :class="{ current: index === 0 }"
+          @click="openMainModal(index)"
+        >
+          <div class="p-top">
+            <PlayerAvatar :name="player.name" :color="player.avatarColor" :size="52" />
+            <div class="p-meta">
+              <span class="p-rank">#{{ index + 1 }}</span>
+              <span class="p-name">{{ player.name }}</span>
             </div>
-            <div class="p-tags">
-              <span v-for="(count, eventId) in player.triggeredEvents" :key="eventId" class="tag">
-                {{ gameStore.customEvents.find(e=>e.id===eventId)?.name || '?' }} <span class="badge">{{ count }}</span>
-              </span>
-            </div>
+            <span class="p-score" :class="{ negative: player.score < 0 }">{{ player.score }}</span>
           </div>
-        </div>
+
+          <div v-if="Object.keys(player.triggeredEvents || {}).length" class="p-tags">
+            <span
+              v-for="(count, eventId) in player.triggeredEvents"
+              :key="eventId"
+              class="tag"
+            >
+              {{ gameStore.customEvents.find((e) => e.id === eventId)?.name || '?' }}
+              <b>{{ count }}</b>
+            </span>
+          </div>
+        </article>
       </div>
-      <div class="safe-bottom-spacer"></div>
+      <div class="bottom-space"></div>
     </div>
 
-    <!-- 底部抽屉 Modal -->
-    <transition name="modal-slide">
+    <!-- 底部抽屉：触发事件 / 玩家管理 -->
+    <transition name="fade">
       <div v-if="isMainModalOpen" class="sheet-overlay" @click.self="closeAllModals">
-        <div class="sheet-content">
-          <div class="sheet-handle"></div>
-          
-          <div v-if="pendingCustomEventId" class="target-mode">
-            <h3>选择目标玩家</h3>
+        <div class="sheet">
+          <div class="handle"></div>
+
+          <template v-if="pendingCustomEventId">
+            <h3 class="sheet-title">选择目标玩家</h3>
             <div class="target-grid">
-              <button v-for="(p, idx) in gameStore.currentPlayers" :key="p.id" v-show="idx !== selectedPlayerIndex"
-                class="btn target-btn" :style="{ borderLeft: `6px solid ${p.avatarColor}` }" @click="confirmCustomTarget(idx)">
+              <button
+                v-for="p in gameStore.currentPlayers"
+                :key="p.id"
+                v-show="p.id !== currentPlayerId()"
+                class="btn target-btn"
+                :style="{ borderLeft: `4px solid ${p.avatarColor}` }"
+                :disabled="isSubmitting"
+                @click="confirmCustomTarget(p.id)"
+              >
                 {{ p.name }}
               </button>
             </div>
-            <button class="btn btn-cancel" @click="pendingCustomEventId = null">返回</button>
-          </div>
+            <button class="btn btn-block ghost-btn" @click="pendingCustomEventId = null">
+              <AppIcon name="arrow-left" :size="18" />
+              <span>返回</span>
+            </button>
+          </template>
 
-          <div v-else>
-            <div class="sheet-title">{{ gameStore.currentPlayers[selectedPlayerIndex!].name }}</div>
-            <div class="segmented-control">
-              <button :class="{ active: modalTab === 'events' }" @click="modalTab = 'events'">触发事件</button>
-              <button :class="{ active: modalTab === 'manage' }" @click="modalTab = 'manage'">玩家管理</button>
+          <template v-else-if="selectedPlayer">
+            <h3 class="sheet-title">{{ selectedPlayer.name }}</h3>
+
+            <div class="segmented">
+              <button :class="{ on: modalTab === 'events' }" @click="modalTab = 'events'">触发事件</button>
+              <button :class="{ on: modalTab === 'manage' }" @click="modalTab = 'manage'">玩家管理</button>
             </div>
-            <div v-if="modalTab === 'events'" class="tab-content">
+
+            <div class="sheet-body">
+              <template v-if="modalTab === 'events'">
                 <template v-if="AppConfig.isPersonal">
-                  <div v-if="positiveEvents.length > 0" class="event-group">
-                    <div class="group-title">🟩 得分事件</div>
-                    <div class="event-btn-grid"><button v-for="event in positiveEvents" :key="event.id" class="btn e-btn positive-btn" @click="handleEventClick(event.id)">{{ event.name }} <span class="e-score">+{{ event.score }}</span></button></div>
+                  <div v-if="positiveEvents.length" class="ev-group">
+                    <div class="ev-group-title">得分</div>
+                    <div class="ev-grid">
+                      <button
+                        v-for="event in positiveEvents"
+                        :key="event.id"
+                        class="ev-btn plus"
+                        :disabled="isSubmitting"
+                        @click="handleEventClick(event.id)"
+                      >
+                        <span class="ev-name">{{ event.name }}</span>
+                        <span class="ev-score">+{{ event.score }}</span>
+                      </button>
+                    </div>
                   </div>
-                  <div v-if="negativeEvents.length > 0" class="event-group">
-                    <div class="group-title">🟥 赔分事件</div>
-                    <div class="event-btn-grid"><button v-for="event in negativeEvents" :key="event.id" class="btn e-btn negative-btn" @click="handleEventClick(event.id)">{{ event.name }} <span class="e-score">-{{ event.score }}</span></button></div>
+                  <div v-if="negativeEvents.length" class="ev-group">
+                    <div class="ev-group-title">扣/赔分</div>
+                    <div class="ev-grid">
+                      <button
+                        v-for="event in negativeEvents"
+                        :key="event.id"
+                        class="ev-btn minus"
+                        :disabled="isSubmitting"
+                        @click="handleEventClick(event.id)"
+                      >
+                        <span class="ev-name">{{ event.name }}</span>
+                        <span class="ev-score">-{{ event.score }}</span>
+                      </button>
+                    </div>
                   </div>
                 </template>
                 <template v-else>
-                  <div v-if="gameStore.customEvents.length === 0" class="empty-hint">暂无自定义事件，请在首页设置中添加。</div>
-                  <div class="event-btn-grid">
-                    <button v-for="event in gameStore.customEvents" :key="event.id" class="btn e-btn" @click="handleEventClick(event.id)">
-                      {{ event.name }} <span class="e-score">{{ event.targetType.includes('take') ? '+' : '-' }}{{ event.score }}</span>
+                  <p v-if="!gameStore.customEvents.length" class="empty-hint">
+                    暂无计分规则，请在首页「计分规则」里添加。
+                  </p>
+                  <div class="ev-grid">
+                    <button
+                      v-for="event in gameStore.customEvents"
+                      :key="event.id"
+                      class="ev-btn"
+                      :class="event.targetType.includes('take') ? 'plus' : 'minus'"
+                      :disabled="isSubmitting"
+                      @click="handleEventClick(event.id)"
+                    >
+                      <span class="ev-name">{{ event.name }}</span>
+                      <span class="ev-score">
+                        {{ event.targetType.includes('take') ? '+' : '-' }}{{ event.score }}
+                      </span>
                     </button>
                   </div>
                 </template>
+              </template>
+
+              <template v-else>
+                <div class="score-edit">
+                  <label>手动修正分数</label>
+                  <input v-model.number="editScore" type="number" class="score-input" />
+                  <button class="btn btn-primary btn-block" @click="saveScoreEdit">
+                    <AppIcon name="check" :size="18" />
+                    <span>保存</span>
+                  </button>
+                </div>
+                <button class="btn btn-block" @click="isReplaceModalOpen = true; isMainModalOpen = false">
+                  <AppIcon name="repeat" :size="18" />
+                  <span>替换玩家</span>
+                </button>
+                <button class="btn btn-block btn-danger" @click="removeCurrentPlayer">
+                  <AppIcon name="user-minus" :size="18" />
+                  <span>移出对局</span>
+                </button>
+              </template>
             </div>
-            <div v-if="modalTab === 'manage'" class="tab-content flex-col">
-              <div class="edit-box">
-                <label>强制修改分数</label>
-                <input type="number" v-model.number="editScore" class="modal-input" />
-                <button class="btn btn-primary" @click="saveScoreEdit" style="margin-top:10px;width:100%">保存分数</button>
-              </div>
-              <button class="btn btn-icon-row" @click="isReplaceModalOpen = true; isMainModalOpen = false;">
-                <img :src="iconReplace" class="btn-icon adaptive-icon" /> 替换玩家
-              </button>
-              <button class="btn btn-icon-row btn-danger" @click="removeCurrentPlayer">
-                <img :src="iconRemove" class="btn-icon adaptive-icon" /> 移出对局
-              </button>
-            </div>
-          </div>
+          </template>
         </div>
       </div>
     </transition>
 
-    <!-- 中间弹窗 Modal (重新排序/增加玩家) -->
+    <!-- 居中弹窗：加人 / 替换 / 排序 -->
     <transition name="fade">
-      <div v-if="isReplaceModalOpen || isAddPlayerModalOpen || isReorderModalOpen" class="modal-center-overlay" @click.self="closeAllModals">
-        <div class="modal-center-content">
-          <div class="modal-header">
-            <h3 class="modal-title" v-if="isReplaceModalOpen">选择替补玩家</h3>
-            <h3 class="modal-title" v-if="isAddPlayerModalOpen">增加新玩家</h3>
+      <div
+        v-if="isReplaceModalOpen || isAddPlayerModalOpen || isReorderModalOpen"
+        class="modal-overlay"
+        @click.self="closeAllModals"
+      >
+        <div class="modal">
+          <header class="modal-head">
+            <h3 v-if="isReplaceModalOpen">选择替补玩家</h3>
+            <h3 v-if="isAddPlayerModalOpen">加入新玩家</h3>
             <template v-if="isReorderModalOpen">
-              <h3 class="modal-title">自定义排序</h3>
-              <p class="modal-sub">请按击球顺序依次点击玩家</p>
+              <h3>自定义排序</h3>
+              <p>按新的击球顺序依次点击</p>
             </template>
-          </div>
-          
-          <!-- 库中玩家列表 (替补/增加) -->
-          <div class="scroll-list" v-if="!isReorderModalOpen">
-            <div v-if="availablePlayersForReplace.length === 0" class="empty-hint">库中没有其他可用玩家。</div>
-            <div v-for="sp in availablePlayersForReplace" :key="sp.id" class="modern-item" @click="isReplaceModalOpen ? confirmReplace(sp.id) : confirmAddMidGame(sp.id)">
-              <div class="avatar" :style="{ backgroundColor: sp.avatarColor }">{{ getAvatarText(sp.name) }}</div>
-              <span class="name">{{ sp.name }}</span>
-            </div>
-          </div>
-          
-          <!-- 对局玩家列表 (排序) -->
-          <div class="scroll-list" v-if="isReorderModalOpen">
-            <div v-for="player in gameStore.currentPlayers" :key="player.id" 
-                 class="modern-item" :class="{ active: reorderSelection.includes(player.id) }" 
-                 @click="toggleReorderSelect(player.id)">
-              <div class="avatar" :style="{ backgroundColor: player.avatarColor }">{{ getAvatarText(player.name) }}</div>
-              <span class="name">{{ player.name }}</span>
-              <div class="select-indicator">
-                <span v-if="reorderSelection.includes(player.id)" class="order-badge">{{ reorderSelection.indexOf(player.id) + 1 }}</span>
+          </header>
+
+          <div class="modal-body scroll">
+            <template v-if="!isReorderModalOpen">
+              <p v-if="!availablePlayersForReplace.length" class="empty-hint">库中没有其他可用玩家。</p>
+              <div
+                v-for="sp in availablePlayersForReplace"
+                :key="sp.id"
+                class="pick"
+                @click="isReplaceModalOpen ? confirmReplace(sp.id) : confirmAddMidGame(sp.id)"
+              >
+                <PlayerAvatar :name="sp.name" :color="sp.avatarColor" :size="36" />
+                <span class="pick-name">{{ sp.name }}</span>
+                <AppIcon name="chevron-right" :size="18" />
               </div>
-            </div>
+            </template>
+            <template v-else>
+              <div
+                v-for="player in gameStore.currentPlayers"
+                :key="player.id"
+                class="pick"
+                :class="{ on: reorderSelection.includes(player.id) }"
+                @click="toggleReorderSelect(player.id)"
+              >
+                <PlayerAvatar :name="player.name" :color="player.avatarColor" :size="36" />
+                <span class="pick-name">{{ player.name }}</span>
+                <span v-if="reorderSelection.includes(player.id)" class="order-badge">
+                  {{ reorderSelection.indexOf(player.id) + 1 }}
+                </span>
+                <span v-else class="tick"></span>
+              </div>
+            </template>
           </div>
 
           <div class="modal-actions">
-            <button class="btn btn-cancel" style="flex:1" @click="closeAllModals">取消</button>
-            <button v-if="isReorderModalOpen" class="btn btn-primary" style="flex:1" :disabled="reorderSelection.length !== gameStore.currentPlayers.length" @click="confirmReorder">确认</button>
+            <button class="btn btn-block ghost-btn" @click="closeAllModals">取消</button>
+            <button
+              v-if="isReorderModalOpen"
+              class="btn btn-primary btn-block"
+              :disabled="reorderSelection.length !== gameStore.currentPlayers.length"
+              @click="confirmReorder"
+            >
+              确定
+            </button>
           </div>
         </div>
       </div>
@@ -257,144 +399,455 @@ const endGame = async () => {
 </template>
 
 <style scoped>
-/* 样式部分 */
-.adaptive-icon { filter: var(--icon-filter); transition: filter 0.3s ease; }
-.game-view-wrapper { height: 100vh; display: flex; flex-direction: column; background: var(--bg-grad); overflow: hidden; }
-.game-header { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: calc(var(--safe-top) + 15px) 20px 15px 20px; background: rgba(0,0,0,0.05); backdrop-filter: blur(10px); border-bottom: var(--glass-border); z-index: 10; }
-.round-display { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 14px; background: var(--round-bg); border: var(--round-border); box-shadow: var(--round-shadow); transition: all 0.3s ease; }
-.r-label { font-size: 11px; color: var(--round-label); text-transform: uppercase; font-weight: 800; letter-spacing: 1px; }
-.r-num { font-size: 24px; color: var(--round-num); font-weight: 900; line-height: 1.1; }
-.control-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-.img-btn { background: var(--glass); border: var(--glass-border); border-radius: 16px; padding: 10px; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; box-shadow: var(--shadow-sm); }
-.img-btn img { width: 28px; height: 28px; object-fit: contain; }
-.img-btn:active:not(:disabled) { transform: scale(0.9); }
-.img-btn:disabled { opacity: 0.4; filter: grayscale(100%); }
-
-.players-scroll-area { flex: 1; overflow-y: auto; padding-top: 20px; }
-.players-grid-container { padding: 0 20px 20px; display: grid; grid-template-columns: 1fr; gap: 20px; margin: 0 auto; width: 100%; align-content: start; }
-@media (min-width: 700px) { .players-grid-container { grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1200px; } }
-.safe-bottom-spacer { height: calc(var(--safe-bottom) + 20px); }
-
-/* --- 动态边框色彩变量 --- */
-.p-card-wrapper {
-  --glow-color: #FFD700;
-}
-:root[data-theme="light"] .p-card-wrapper {
-  --glow-color: var(--primary); 
+.game {
+  padding-top: var(--safe-top);
 }
 
-/* --- 皇室战争风格流光边框重构 --- */
-.p-card-wrapper {
+/* ---------- 顶栏 ---------- */
+.game-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4) var(--s3);
+}
+.round {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 28%, transparent);
+}
+.round-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  color: var(--gold);
+}
+.round-num {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.tools {
+  display: flex;
+  gap: var(--s2);
+}
+
+/* ---------- 玩家卡 ---------- */
+.cards {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4) 0;
+}
+@media (min-width: 720px) {
+  .cards {
+    grid-template-columns: 1fr 1fr;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+}
+
+.p-card {
   position: relative;
-  padding: 3px; 
-  border-radius: 24px;
+  padding: var(--s4);
+  border-radius: var(--r-lg);
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
   cursor: pointer;
-  overflow: hidden; 
-  transform: translateZ(0); 
-  box-shadow: var(--shadow-md);
-  background: transparent;
-  box-sizing: border-box;
+  transition: transform var(--d1) var(--ease), border-color var(--d1) var(--ease);
 }
-.p-card-wrapper:active { transform: scale(0.97); transition: transform 0.1s; }
-.p-card-wrapper::before {
-  content: "";
+.p-card:active {
+  transform: scale(0.985);
+}
+/* 只有当前击球位保留流光，其余静态描边 —— 8 张卡同时跑动画会持续掉帧 */
+.p-card.current {
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+  box-shadow: var(--shadow-2), 0 0 0 1px color-mix(in srgb, var(--gold) 20%, transparent);
+}
+.p-card.current::before {
+  content: '';
   position: absolute;
-  top: -50%; left: -50%; width: 200%; height: 200%;
-  background: conic-gradient(
-    transparent, 
-    var(--glow-color), 
-    transparent 30%
-  );
-  animation: rotate 4s linear infinite;
-  z-index: 0; 
+  inset: -60%;
+  background: conic-gradient(transparent, var(--gold), transparent 22%);
+  opacity: 0.16;
+  animation: sweep 5s linear infinite;
+  pointer-events: none;
 }
-@keyframes rotate { 100% { transform: rotate(1turn); } }
-
-.p-card-content { 
-  position: relative; 
-  z-index: 1; 
-  background: var(--glass-modal); 
-  border-radius: 21px; 
-  display: flex; flex-direction: column; 
-  padding: clamp(20px, 3%, 40px); 
-  height: 100%; width: 100%;
+.p-card.current::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--gold);
 }
-:root[data-theme="light"] .p-card-content { background: #ffffff; }
-
-.p-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: clamp(10px, 2%, 20px); }
-.p-info-group { display: flex; align-items: center; gap: 12px; flex: 1; overflow: hidden; }
-.p-rank { font-weight: bold; color: var(--text-muted); font-size: clamp(14px, 1.5vw, 20px); min-width: 24px; }
-.p-avatar { border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; width: clamp(40px, 6vw, 72px); height: clamp(40px, 6vw, 72px); font-size: clamp(16px, 2.5vw, 28px); }
-.p-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: clamp(18px, 2.5vw, 32px); }
-.p-score { font-weight: 900; color: var(--success); font-family: monospace; line-height: 1; margin-left: 10px; font-size: clamp(42px, 7vw, 90px); text-shadow: 0 2px 10px rgba(0,0,0,0.2); }
-.p-score.is-negative { color: var(--danger); }
-.p-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-left: clamp(40px, 6vw, 72px); padding-left: 12px; }
-.tag { background: rgba(128,128,128,0.1); display: flex; align-items: center; gap: 6px; border-radius: 12px; padding: clamp(4px, 0.5vw, 8px) clamp(10px, 1vw, 16px); font-size: clamp(12px, 1.2vw, 16px); }
-.badge { background: var(--primary); color: white; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 50%; width: clamp(16px, 1.8vw, 24px); height: clamp(16px, 1.8vw, 24px); font-size: clamp(10px, 1vw, 14px); }
-
-/* Target Mode & Modals */
-.target-mode h3 { text-align: center; font-size: 18px; margin-bottom: 20px; color: var(--text-main); font-weight: bold; }
-.target-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; max-height: 45vh; overflow-y: auto; }
-.target-btn { background: rgba(128,128,128,0.1); height: 60px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600; border-radius: 16px; transition: all 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-.target-btn:active { transform: scale(0.96); background: rgba(128,128,128,0.2); }
-.btn-cancel { width: 100%; height: 54px; font-size: 16px; background: rgba(128,128,128,0.15); color: var(--text-main); border-radius: 16px; font-weight: 600; }
-
-.sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: flex-end; }
-.sheet-content { width: 100%; background: var(--glass-modal); border-radius: 24px 24px 0 0; padding: 25px 20px; padding-bottom: calc(var(--safe-bottom) + 30px); border-top: 1px solid rgba(255,255,255,0.1); box-shadow: 0 -10px 40px rgba(0,0,0,0.3); }
-.sheet-handle { width: 40px; height: 5px; background: rgba(128,128,128,0.3); border-radius: 3px; margin: 0 auto 15px; }
-.sheet-title { text-align: center; font-size: 20px; font-weight: bold; margin-bottom: 20px; color: var(--text-main); }
-.segmented-control { display: flex; background: rgba(128,128,128,0.2); border-radius: 12px; padding: 4px; margin-bottom: 20px; }
-.segmented-control button { flex: 1; padding: 10px; border: none; background: transparent; color: var(--text-muted); font-size: 14px; transition: 0.2s; }
-.segmented-control button.active { background: var(--glass); color: var(--text-main); font-weight: bold; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-.tab-content { max-height: 50vh; overflow-y: auto; padding-bottom: 10px; }
-.event-group { margin-bottom: 20px; }
-.group-title { font-size: 13px; font-weight: bold; color: var(--text-muted); margin-bottom: 10px; padding-left: 5px; }
-.event-btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.e-btn { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding: 12px 15px; }
-.e-score { background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 8px; font-size: 13px; color: var(--warning); }
-.positive-btn { background: rgba(91, 255, 138, 0.1); border: 1px solid rgba(91, 255, 138, 0.3); }
-.positive-btn .e-score { color: var(--success); font-weight: bold; }
-.negative-btn { background: rgba(255, 91, 91, 0.1); border: 1px solid rgba(255, 91, 91, 0.3); }
-.negative-btn .e-score { color: var(--danger); font-weight: bold; }
-.flex-col { display: flex; flex-direction: column; gap: 12px; }
-.edit-box { background: rgba(128,128,128,0.1); padding: 15px; border-radius: 16px; margin-bottom: 5px; }
-.edit-box label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
-.modal-input { font-size: 24px; text-align: center; font-weight: bold; background: var(--input-bg) !important; color: var(--primary) !important; }
-.btn-icon-row { display: flex; align-items: center; justify-content: center; gap: 10px; }
-.btn-icon { width: 24px; height: 24px; object-fit: contain; }
-
-/* --- 全新重构：中间弹窗 UI (排序/替补) --- */
-.modal-center-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
-.modal-center-content { background: var(--glass-modal); border: var(--glass-border); width: 100%; max-width: 360px; border-radius: 24px; padding: 25px 20px; box-shadow: 0 25px 60px rgba(0,0,0,0.5); }
-.modal-header { margin-bottom: 20px; }
-.modal-title { text-align: center; font-size: 20px; font-weight: 700; margin: 0; color: var(--text-main); }
-.modal-sub { text-align: center; font-size: 13px; color: var(--text-muted); margin: 8px 0 0 0; }
-.scroll-list { max-height: 45vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; padding-right: 4px; }
-
-/* 现代列表项 */
-.modern-item {
-  padding: 14px 16px;
-  border-radius: 16px;
-  display: flex; align-items: center; gap: 15px;
-  background: rgba(128,128,128,0.1);
-  border: 2px solid transparent;
-  cursor: pointer; transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+@keyframes sweep {
+  to {
+    transform: rotate(1turn);
+  }
 }
-.modern-item:active { transform: scale(0.96); }
-.modern-item.active { background: rgba(0, 122, 255, 0.1); border-color: var(--primary); }
-.modern-item .avatar { width: 36px; height: 36px; border-radius: 18px; color: white; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
-.modern-item .name { flex: 1; font-weight: 600; font-size: 16px; color: var(--text-main); }
-
-/* 选择圆环指示器 */
-.select-indicator {
-  width: 26px; height: 26px; border-radius: 13px;
-  border: 2px solid rgba(128,128,128,0.3);
-  display: flex; align-items: center; justify-content: center;
-  transition: 0.2s;
+@media (prefers-reduced-motion: reduce) {
+  .p-card.current::before {
+    animation: none;
+  }
 }
-.modern-item.active .select-indicator { border-color: var(--primary); background: var(--primary); }
-.order-badge { color: white; font-weight: 800; font-size: 13px; }
 
-.modal-actions { display: flex; gap: 12px; }
-.empty-hint { text-align: center; color: var(--text-muted); padding: 20px; font-size: 14px; }
+.p-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+.p-meta {
+  flex: 1;
+  min-width: 0;
+}
+.p-rank {
+  display: block;
+  font-size: var(--f-xs);
+  font-weight: 700;
+  color: var(--text-3);
+  letter-spacing: 0.6px;
+}
+.p-name {
+  display: block;
+  font-size: var(--f-md);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.p-score {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+  flex: none;
+}
+.p-score.negative {
+  color: var(--danger);
+}
+.p-tags {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 3px var(--s2) 3px var(--s3);
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--f-xs);
+}
+.tag b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-full);
+  background: var(--primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.bottom-space {
+  height: var(--s6);
+}
+
+/* ---------- 抽屉 ---------- */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: flex-end;
+  z-index: 100;
+}
+.sheet {
+  width: 100%;
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--surface-solid);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  border-top: 1px solid var(--border);
+  padding: var(--s2) var(--s4) calc(var(--s4) + var(--safe-bottom));
+  box-shadow: var(--shadow-3);
+  animation: rise var(--d2) var(--ease);
+}
+@keyframes rise {
+  from {
+    transform: translateY(14%);
+    opacity: 0.4;
+  }
+}
+.handle {
+  width: 38px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  margin: 0 auto var(--s4);
+}
+.sheet-title {
+  font-size: var(--f-lg);
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: var(--s4);
+}
+.segmented {
+  display: flex;
+  padding: 3px;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  margin-bottom: var(--s4);
+}
+.segmented button {
+  flex: 1;
+  height: 36px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--f-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--d1) var(--ease), color var(--d1) var(--ease);
+}
+.segmented button.on {
+  background: var(--surface-solid);
+  color: var(--text-1);
+  box-shadow: var(--shadow-1);
+}
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.ev-group-title {
+  font-size: var(--f-xs);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: var(--s2);
+  padding-left: var(--s1);
+}
+.ev-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+}
+.ev-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  min-height: 48px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  color: var(--text-1);
+  font-size: var(--f-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--d1) var(--ease), background var(--d1) var(--ease);
+}
+.ev-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.ev-btn:disabled {
+  opacity: 0.5;
+}
+.ev-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ev-score {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--f-sm);
+  font-weight: 700;
+  flex: none;
+}
+.ev-btn.plus .ev-score {
+  color: var(--success);
+}
+.ev-btn.minus .ev-score {
+  color: var(--danger);
+}
+
+.target-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+  max-height: 46vh;
+  overflow-y: auto;
+  margin-bottom: var(--s4);
+}
+.target-btn {
+  min-height: 54px;
+  font-size: var(--f-base);
+  justify-content: flex-start;
+}
+
+.ghost-btn {
+  background: var(--surface-2);
+}
+
+.score-edit {
+  padding: var(--s4);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.score-edit label {
+  display: block;
+  font-size: var(--f-sm);
+  color: var(--text-2);
+  margin-bottom: var(--s3);
+}
+.score-input {
+  width: 100%;
+  height: 52px;
+  margin-bottom: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-solid);
+  color: var(--text-1);
+  font-size: var(--f-xl);
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.score-input:focus {
+  border-color: var(--primary);
+}
+
+.empty-hint {
+  text-align: center;
+  color: var(--text-3);
+  font-size: var(--f-sm);
+  padding: var(--s5) 0;
+}
+
+/* ---------- 居中弹窗 ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s5);
+  z-index: 200;
+}
+.modal {
+  width: 100%;
+  max-width: 380px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--s5) var(--s4) var(--s4);
+  box-shadow: var(--shadow-3);
+}
+.modal-head {
+  text-align: center;
+  margin-bottom: var(--s4);
+}
+.modal-head h3 {
+  font-size: var(--f-lg);
+  font-weight: 700;
+}
+.modal-head p {
+  margin-top: var(--s2);
+  font-size: var(--f-sm);
+  color: var(--text-2);
+}
+.modal-body {
+  max-height: 46vh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.pick {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  border: 1px solid transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: transform var(--d1) var(--ease), background var(--d1) var(--ease),
+    border-color var(--d1) var(--ease);
+}
+.pick:active {
+  transform: scale(0.98);
+}
+.pick.on {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: var(--primary);
+}
+.pick-name {
+  flex: 1;
+  font-size: var(--f-base);
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.order-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-full);
+  background: var(--primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.tick {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-full);
+  border: 1.6px solid var(--border-strong);
+  flex: none;
+}
+.modal-actions {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
 </style>

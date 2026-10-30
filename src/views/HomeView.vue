@@ -2,115 +2,290 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { gameStore } from '../store';
-import { getAvatarText } from '../utils/avatar';
-
-import iconPlayers from '../assets/icons/players.png';
-import iconSettings from '../assets/icons/settings.png';
+import { guard } from '../utils/invoke';
+import type { Player } from '../types';
+import AppIcon from '../components/AppIcon.vue';
+import PlayerAvatar from '../components/PlayerAvatar.vue';
+import EmptyState from '../components/EmptyState.vue';
 
 const router = useRouter();
 const isDark = ref(true);
 
 onMounted(() => {
-  const current = document.documentElement.getAttribute('data-theme');
-  isDark.value = current !== 'light';
+  isDark.value = document.documentElement.getAttribute('data-theme') !== 'light';
 });
 
 const toggleTheme = () => {
   isDark.value = !isDark.value;
-  const newTheme = isDark.value ? 'dark' : 'light';
-  document.documentElement.setAttribute('data-theme', newTheme);
-  localStorage.setItem('bilscore_theme', newTheme);
+  const next = isDark.value ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('bilscore_theme', next);
 };
 
 const startNewGame = () => router.push('/select-players');
 const goToEvents = () => router.push('/events');
 const goToPlayers = () => router.push('/players');
-const resumeMatch = (id: string) => { gameStore.resumeGame(id); router.push('/game'); };
+
+const resumeMatch = async (id: string) => {
+  const ok = await guard(gameStore.resumeGame(id), '读取对局失败');
+  if (ok) router.push('/game');
+};
 
 const formatDate = (ts: number) => {
   const d = new Date(ts);
-  return `${d.getMonth()+1}月${d.getDate()}日 ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  const time = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+  return sameDay ? `今天 ${time}` : `${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
 };
-const getTopScorer = (players: any[]) => players.length === 0 ? 'None' : players.reduce((prev, curr) => (prev.score > curr.score) ? prev : curr).name;
+
+const topOf = (players: Player[]): Player | null => {
+  if (!players || players.length === 0) return null;
+  return players.reduce((a, b) => (a.score > b.score ? a : b));
+};
 </script>
 
 <template>
-  <div class="page-container">
-    <div class="top-bar home-nav">
-      <button class="nav-btn" @click="goToPlayers">
-        <img :src="iconPlayers" class="nav-icon adaptive-icon" />
-        <span>玩家库</span>
-      </button>
-      
-      <button class="theme-toggle" @click="toggleTheme">
-        <span v-if="isDark">🌙</span>
-        <span v-else>☀️</span>
-      </button>
-      
-      <button class="nav-btn" @click="goToEvents">
-        <img :src="iconSettings" class="nav-icon adaptive-icon" />
-        <span>事件规则</span>
-      </button>
-    </div>
+  <div class="page home">
+    <header class="nav-bar">
+      <div class="nav-side">
+        <span class="brand">
+          <AppIcon name="circle-dot" :size="20" />
+          <span>BilScore</span>
+        </span>
+      </div>
+      <div class="nav-title"></div>
+      <div class="nav-side right">
+        <button class="icon-btn ghost" @click="toggleTheme" :aria-label="isDark ? '切换浅色' : '切换深色'">
+          <AppIcon :name="isDark ? 'sun' : 'moon'" :size="20" />
+        </button>
+      </div>
+    </header>
 
-    <div class="header-hero">
-      <button class="btn btn-primary btn-start" @click="startNewGame">
-        <span class="icon">🎱</span> 开始新对局
-      </button>
-    </div>
+    <div class="scroll">
+      <!-- 主行动 -->
+      <section class="hero">
+        <button class="btn btn-primary btn-block start-btn" @click="startNewGame">
+          <AppIcon name="play" :size="20" />
+          <span>开始新对局</span>
+        </button>
+      </section>
 
-    <div class="history-section">
+      <!-- 快捷入口 -->
+      <section class="tiles">
+        <button class="tile" @click="goToPlayers">
+          <AppIcon name="users" :size="22" />
+          <span class="tile-label">玩家库</span>
+          <span class="tile-value">{{ gameStore.savedPlayers.length }}</span>
+        </button>
+        <button class="tile" @click="goToEvents">
+          <AppIcon name="sliders-horizontal" :size="22" />
+          <span class="tile-label">计分规则</span>
+          <span class="tile-value">{{ gameStore.customEvents.length }}</span>
+        </button>
+      </section>
+
+      <!-- 最近对局 -->
       <div class="section-title">最近对局</div>
-      <div class="history-list">
-        <div v-if="gameStore.history.length === 0" class="empty-state">暂无对局记录，快去开一局吧！</div>
-        
-        <div v-for="record in gameStore.history" :key="record.id" class="history-card" @click="resumeMatch(record.id)">
-          <div class="card-header">
-            <span class="date">{{ formatDate(record.lastEdited) }}</span>
-            <span class="round-badge">R{{ record.round }}</span>
+
+      <div v-if="gameStore.history.length === 0" class="pad">
+        <EmptyState icon="history" title="还没有对局记录" desc="建好玩家后开一局，记录会自动保存在这里。">
+          <button class="btn btn-primary btn-block" @click="startNewGame">
+            <AppIcon name="play" :size="18" />
+            <span>开一局</span>
+          </button>
+        </EmptyState>
+      </div>
+
+      <section v-else class="history">
+        <article
+          v-for="record in gameStore.history"
+          :key="record.id"
+          class="card match"
+          @click="resumeMatch(record.id)"
+        >
+          <div class="match-head">
+            <span class="match-date">{{ formatDate(record.lastEdited) }}</span>
+            <span class="chip">第 {{ record.round }} 轮</span>
+            <AppIcon name="chevron-right" :size="18" />
           </div>
-          <div class="card-body">
-            <span class="top-player">Top: <b style="color: var(--success)">{{ getTopScorer(record.players) }}</b></span>
-          </div>
-          <div class="players-preview">
-            <div v-for="p in record.players" :key="p.id" class="mini-avatar" :style="{ backgroundColor: p.avatarColor }">
-              {{ getAvatarText(p.name) }}
+
+          <div class="match-body">
+            <div class="avatars">
+              <PlayerAvatar
+                v-for="p in record.players.slice(0, 6)"
+                :key="p.id"
+                :name="p.name"
+                :color="p.avatarColor"
+                :size="32"
+                class="avatars-item"
+              />
+              <span v-if="record.players.length > 6" class="avatars-more">
+                +{{ record.players.length - 6 }}
+              </span>
+            </div>
+            <div v-if="topOf(record.players)" class="match-top">
+              <AppIcon name="crown" :size="15" />
+              <span class="match-top-name">{{ topOf(record.players)!.name }}</span>
+              <span class="match-top-score" :class="{ negative: topOf(record.players)!.score < 0 }">
+                {{ topOf(record.players)!.score }}
+              </span>
             </div>
           </div>
-        </div>
-      </div>
+        </article>
+      </section>
+
+      <div class="bottom-space"></div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 使用从 App.vue 拿来的 CSS 变量 */
-.adaptive-icon { filter: var(--icon-filter); transition: filter 0.3s ease; }
+.home {
+  padding-top: var(--safe-top);
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--f-base);
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text-1);
+  padding-left: var(--s2);
+}
+.brand :deep(.app-icon) {
+  color: var(--primary);
+}
 
-.home-nav { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0 10px; margin-top: 15px; }
-.nav-btn { background: transparent; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.nav-btn span { font-size: 12px; font-weight: 600; color: var(--primary); }
-.nav-icon { width: 32px; height: 32px; object-fit: contain; }
+.hero {
+  padding: var(--s2) var(--s4) var(--s5);
+}
+.start-btn {
+  height: 58px;
+  font-size: var(--f-lg);
+  border-radius: var(--r-lg);
+}
 
-.theme-toggle { background: var(--glass); border: var(--glass-border); width: 44px; height: 44px; border-radius: 22px; display: flex; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; transition: 0.3s; box-shadow: var(--shadow-sm); }
-.theme-toggle:active { transform: scale(0.9); }
+.tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s3);
+  padding: 0 var(--s4) var(--s6);
+}
+.tile {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-solid);
+  color: var(--text-1);
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: transform var(--d1) var(--ease), background var(--d1) var(--ease);
+}
+.tile:active {
+  transform: scale(0.975);
+  background: var(--surface-2);
+}
+.tile :deep(.app-icon) {
+  color: var(--primary);
+}
+.tile-label {
+  font-size: var(--f-base);
+  font-weight: 600;
+}
+.tile-value {
+  margin-left: auto;
+  font-size: var(--f-sm);
+  font-weight: 700;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
 
-.header-hero { flex: 0 0 25%; display: flex; align-items: center; justify-content: center; }
-.btn-start { width: 85%; height: 75px; font-size: 22px; border-radius: 37px; display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 10px 30px rgba(0, 168, 255, 0.3); }
-.btn-start .icon { font-size: 26px; }
-.history-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; margin-top: 10px; }
-.section-title { font-size: 14px; color: var(--text-muted); font-weight: 600; margin-bottom: 12px; padding-left: 5px; }
-.history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 20px; }
+.pad {
+  padding: 0 var(--s4);
+}
 
-/* 卡片使用动态阴影 */
-.history-card { background: var(--glass); border: var(--glass-border); border-radius: 16px; padding: 16px; transition: 0.2s; cursor: pointer; box-shadow: var(--shadow-md); }
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: 0 var(--s4);
+}
+.match {
+  padding: var(--s4);
+  cursor: pointer;
+  transition: transform var(--d1) var(--ease), border-color var(--d1) var(--ease);
+}
+.match:active {
+  transform: scale(0.985);
+  border-color: var(--border-strong);
+}
+.match-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  color: var(--text-3);
+}
+.match-date {
+  font-size: var(--f-sm);
+  color: var(--text-2);
+}
+.match-head .chip {
+  margin-left: auto;
+}
+.match-body {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+.avatars {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+.avatars-more {
+  font-size: var(--f-sm);
+  color: var(--text-3);
+  font-weight: 600;
+}
+.match-top {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  color: var(--gold);
+  flex: none;
+}
+.match-top-name {
+  font-size: var(--f-sm);
+  font-weight: 600;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.match-top-score {
+  font-size: var(--f-sm);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.match-top-score.negative {
+  color: var(--danger);
+}
 
-.history-card:active { transform: scale(0.97); background: rgba(128,128,128,0.1); }
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.date { font-size: 13px; color: var(--text-muted); }
-.round-badge { background: rgba(128,128,128,0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; color: var(--text-main); }
-.card-body { margin-bottom: 12px; font-size: 15px; }
-.players-preview { display: flex; gap: 6px; }
-.mini-avatar { width: 26px; height: 26px; border-radius: 13px; color: white; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; }
-.empty-state { text-align: center; color: var(--text-muted); margin-top: 40px; font-size: 14px; }
+.bottom-space {
+  height: var(--s6);
+}
 </style>

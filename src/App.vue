@@ -8,142 +8,372 @@ onMounted(() => {
 
 <template>
   <router-view v-slot="{ Component }">
-    <transition name="fade" mode="out-in">
+    <transition name="page" mode="out-in">
       <component :is="Component" />
     </transition>
   </router-view>
 </template>
 
 <style>
-/* --- 全局主题变量注册 --- */
+/* ============================================================
+   设计系统（v1.3.0）
+   目标：统一圆角/间距/字号/动效，去掉随机取值的"AI 味"，
+   同时保持渲染开销低（不新增常驻动画、不滥用 backdrop-filter）
+   ============================================================ */
 :root {
-  /* [Dark Mode 默认设置] */
-  --bg-grad: linear-gradient(135deg, #1a1c2e 0%, #000000 100%);
-  --glass: rgba(28, 28, 30, 0.75); 
-  --glass-modal: #1C1C1E;
-  --glass-border: 1px solid rgba(255, 255, 255, 0.1);
-  --radius: 16px;
-  
-  --primary: #0A84FF;
-  --primary-grad: linear-gradient(180deg, #0A84FF, #0066CC);
-  --success: #30D158;
-  --danger: #FF453A;
-  --warning: #FFD60A;
-  
-  --text-main: #FFFFFF;
-  --text-muted: rgba(235, 235, 245, 0.6);
-  
-  --input-bg: rgba(118, 118, 128, 0.24);
-  --input-placeholder: rgba(235, 235, 245, 0.3);
-  --input-focus-border: rgba(10, 132, 255, 0.5);
-  
-  --safe-top: env(safe-area-inset-top);
-  --safe-bottom: env(safe-area-inset-bottom);
+  /* 圆角 */
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-xl: 28px;
+  --r-full: 999px;
 
-  /* === 新增：动态组件专属变量 === */
-  
-  /* 你的原图是浅灰色。夜晚模式：先变纯黑，再反转为纯白，确保极致清晰 */
-  --icon-filter: brightness(0) invert(1);
-  
-  /* Round 局数显示块 (夜晚模式低调处理) */
-  --round-bg: rgba(128, 128, 128, 0.2);
-  --round-border: 1px solid rgba(255, 255, 255, 0.1);
-  --round-shadow: none;
-  --round-label: var(--warning);
-  --round-num: var(--text-main);
+  /* 间距 */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s7: 32px;
 
-  /* 卡片与按钮投影 (夜晚发光弱，直接无阴影) */
-  --shadow-sm: none;
-  --shadow-md: none;
-  --shadow-lg: none;
+  /* 字号 */
+  --f-xs: 11px;
+  --f-sm: 13px;
+  --f-base: 15px;
+  --f-md: 17px;
+  --f-lg: 20px;
+  --f-xl: 24px;
+
+  /* 动效 */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --d1: 160ms;
+  --d2: 240ms;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* ---------- Dark（默认） ---------- */
+  --bg-grad: radial-gradient(120% 80% at 12% 0%, #1d2130 0%, transparent 55%),
+    linear-gradient(180deg, #10111a 0%, #08080c 100%);
+  --surface-solid: #15161d;
+  --surface-1: rgba(255, 255, 255, 0.045);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --surface-3: rgba(255, 255, 255, 0.12);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  --text-1: #f5f5f7;
+  --text-2: rgba(245, 245, 247, 0.62);
+  --text-3: rgba(245, 245, 247, 0.4);
+
+  --primary: #0a84ff;
+  --primary-grad: linear-gradient(160deg, #3b9bff, #0062dd);
+  --success: #30d158;
+  --danger: #ff453a;
+  --warning: #ffd60a;
+  --gold: #ffd60a;
+
+  --shadow-1: none;
+  --shadow-2: none;
+  --shadow-3: none;
+  --scrim: rgba(0, 0, 0, 0.55);
 }
 
-/* [Light Mode 覆盖设置] 使用 :root[data-theme] 确保最高 CSS 优先级 */
-:root[data-theme="light"] {
-  /* 极其清透的白灰渐变，绝不会黑屏 */
-  --bg-grad: linear-gradient(135deg, #ffffff 0%, #f0f4f8 100%); 
-  
-  --glass: #FFFFFF;
-  --glass-modal: #FFFFFF;
-  --glass-border: 1px solid rgba(0, 0, 0, 0.05);
-  
-  --primary: #007AFF; 
-  --primary-grad: linear-gradient(180deg, #007AFF, #0062CC);
-  --success: #28a745;
-  --danger: #FF3B30;
-  --warning: #FF9500;
-  
-  --text-main: #1c1c1e; /* 极深灰文字，不伤眼 */
-  --text-muted: rgba(60, 60, 67, 0.6);
-  
-  --input-bg: #FFFFFF;
-  --input-placeholder: rgba(60, 60, 67, 0.3);
-  --input-focus-border: rgba(0, 122, 255, 0.5);
+:root[data-theme='light'] {
+  --bg-grad: linear-gradient(180deg, #f0f1f5 0%, #f7f8fa 100%);
+  --surface-solid: #ffffff;
+  --surface-1: rgba(255, 255, 255, 0.9);
+  --surface-2: rgba(0, 0, 0, 0.04);
+  --surface-3: rgba(0, 0, 0, 0.07);
+  --border: rgba(0, 0, 0, 0.07);
+  --border-strong: rgba(0, 0, 0, 0.14);
 
-  /* === 新增：动态组件专属变量 === */
+  --text-1: #1c1c1e;
+  --text-2: rgba(60, 60, 67, 0.62);
+  --text-3: rgba(60, 60, 67, 0.4);
 
-  /* 白天模式：强行将浅灰图标压成纯黑，保证在白底上绝对显眼 */
-  --icon-filter: brightness(0);
+  --primary: #007aff;
+  --primary-grad: linear-gradient(160deg, #3d94ff, #0062dd);
+  --success: #1ea34a;
+  --danger: #e0342b;
+  --warning: #f58700;
+  --gold: #e0a800;
 
-  /* Round 局数显示块 (白天模式高调处理：蓝色发光胶囊) */
-  --round-bg: var(--primary-grad);
-  --round-border: none;
-  --round-shadow: 0 4px 12px rgba(0, 122, 255, 0.4);
-  --round-label: rgba(255, 255, 255, 0.9);
-  --round-num: #ffffff;
-
-  /* 卡片与按钮投影 (白天加强立体感) */
-  --shadow-sm: 0 4px 10px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.06);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.05);
+  --shadow-1: 0 1px 2px rgba(16, 20, 30, 0.05);
+  --shadow-2: 0 4px 14px rgba(16, 20, 30, 0.07);
+  --shadow-3: 0 10px 30px rgba(16, 20, 30, 0.1);
+  --scrim: rgba(20, 22, 30, 0.35);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: transparent; }
-
-body, html, #app {
-  width: 100vw; height: 100vh; overflow: hidden;
-  background: var(--bg-grad); color: var(--text-main);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-  -webkit-font-smoothing: antialiased; touch-action: manipulation;
-  transition: background 0.3s ease, color 0.3s ease;
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.page-container {
-  display: flex; flex-direction: column; height: 100vh;
-  padding-top: calc(var(--safe-top) + 12px); padding-bottom: calc(var(--safe-bottom) + 12px);
-  padding-left: 20px; padding-right: 20px;
+body,
+html,
+#app {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg-grad);
+  color: var(--text-1);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+    'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  touch-action: manipulation;
+  user-select: none;
+  transition: background var(--d2) var(--ease), color var(--d2) var(--ease);
 }
 
-.top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-shrink: 0; }
-.top-bar h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.5px; text-align: center; flex: 1; }
+/* ---------- 页面骨架 ---------- */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  padding-top: calc(var(--safe-top) + var(--s2));
+  padding-bottom: var(--safe-bottom);
+}
 
-.icon-btn { background: transparent; border: none; font-size: 17px; color: var(--primary); font-weight: 400; padding: 10px; cursor: pointer; }
-.icon-btn:active { opacity: 0.5; }
+/* ---------- 顶部导航 ---------- */
+.nav-bar {
+  flex: none;
+  display: grid;
+  grid-template-columns: 72px 1fr 72px;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  min-height: 52px;
+}
+.nav-title {
+  text-align: center;
+  font-size: var(--f-md);
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.nav-side {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+.nav-side.right {
+  justify-content: flex-end;
+}
 
+/* ---------- 按钮 ---------- */
 .btn {
-  padding: 16px; font-size: 17px; font-weight: 600; border: none; border-radius: 14px;
-  background: var(--glass); color: var(--text-main); 
-  box-shadow: var(--shadow-sm); /* 使用动态阴影 */
-  border: var(--glass-border);
-  transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  min-height: 50px;
+  padding: 0 var(--s5);
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-size: var(--f-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--d1) var(--ease), opacity var(--d1) var(--ease),
+    background var(--d1) var(--ease);
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.972);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn-primary {
+  background: var(--primary-grad);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(0, 122, 255, 0.28);
+}
+.btn-danger {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+.btn-danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+.btn-block {
+  width: 100%;
 }
 
-.btn:active:not(:disabled) { transform: scale(0.96); filter: brightness(0.9); }
-.btn-primary { background: var(--primary-grad); color: #fff; box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3); border: none; }
-.btn-danger { background: rgba(255, 59, 48, 0.1); color: var(--danger); border: none; }
+/* 纯图标按钮 */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: none;
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: transform var(--d1) var(--ease), background var(--d1) var(--ease),
+    opacity var(--d1) var(--ease);
+}
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.icon-btn.ghost {
+  background: transparent;
+}
+.icon-btn.ghost:hover {
+  background: var(--surface-2);
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.icon-btn.primary {
+  color: var(--primary);
+}
 
-input, select {
-  width: 100%; padding: 16px; border-radius: 12px; border: 1px solid transparent; 
-  background: var(--input-bg); color: var(--text-main); font-size: 17px; outline: none; transition: all 0.3s ease;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.02) inset; 
+/* 文字按钮（导航用） */
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-size: var(--f-base);
+  font-weight: 500;
+  padding: var(--s2);
+  cursor: pointer;
 }
-:root[data-theme="light"] input, :root[data-theme="light"] select {
-  border: 1px solid rgba(0,0,0,0.1); box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+.text-btn:active {
+  opacity: 0.5;
 }
-input:focus, select:focus {
-  border-color: var(--primary); background: var(--glass); box-shadow: 0 0 0 4px var(--input-focus-border);
+.text-btn.strong {
+  font-weight: 600;
 }
-::placeholder { color: var(--input-placeholder); }
-.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+.text-btn.muted {
+  color: var(--text-2);
+}
+
+/* ---------- 卡片 / 列表 ---------- */
+.card {
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-height: 56px;
+  padding: var(--s3) var(--s4);
+  background: var(--surface-1);
+  cursor: pointer;
+  transition: transform var(--d1) var(--ease), background var(--d1) var(--ease);
+}
+.row + .row {
+  border-top: 1px solid var(--border);
+}
+.row:active:not(.static) {
+  background: var(--surface-3);
+}
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+.row-title {
+  font-size: var(--f-base);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-sub {
+  margin-top: 2px;
+  font-size: var(--f-sm);
+  color: var(--text-2);
+}
+.row-trail {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--text-3);
+  flex: none;
+}
+
+.section-title {
+  padding: var(--s5) var(--s4) var(--s2);
+  font-size: var(--f-xs);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ---------- 徽章 ---------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  height: 24px;
+  padding: 0 var(--s3);
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--f-xs);
+  font-weight: 600;
+}
+.chip.primary {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--primary);
+}
+.chip.gold {
+  background: color-mix(in srgb, var(--gold) 18%, transparent);
+  color: var(--gold);
+}
+
+/* ---------- 底部固定操作区 ---------- */
+.bottom-bar {
+  flex: none;
+  padding: var(--s3) var(--s4) calc(var(--s3) + var(--safe-bottom));
+  background: var(--surface-solid);
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- 滚动区 ---------- */
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* ---------- 页面切换 ---------- */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity var(--d1) var(--ease), transform var(--d1) var(--ease);
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-leave-to {
+  opacity: 0;
+}
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--d1) var(--ease);
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
 </style>

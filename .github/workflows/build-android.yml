@@ -1,0 +1,108 @@
+name: Build Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '构建版本：public（通用）或 personal（内置规则）'
+        required: true
+        default: 'public'
+        type: choice
+        options:
+          - public
+          - personal
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  android:
+    name: Android (${{ inputs.mode || 'public' }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri -> target'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK / NDK
+        uses: android-actions/setup-android@v3
+        with:
+          # 与本地 D:\AndroidDev\Sdk\ndk\29.0.14206865 保持一致，避免工具链漂移
+          ndk-version: 29.0.14206865
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Frontend Deps
+        run: npm ci
+
+      # Vite 只从 .env 文件读取 VITE_* 变量，直接写 env: 无效，必须落盘
+      - name: Write Build Mode
+        run: echo "VITE_APP_MODE=${{ inputs.mode || 'public' }}" > .env
+
+      - name: Inject Signing Key
+        env:
+          KS_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KS_BASE64" ]; then
+            echo "$KS_BASE64" | base64 -d > src-tauri/gen/android/app/bilscore.jks
+            cat > src-tauri/gen/android/key.properties <<EOF
+          storePassword=$KS_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=bilscore.jks
+          EOF
+            echo "已注入签名配置"
+          else
+            echo "未检测到 ANDROID_KEYSTORE_BASE64，将输出未签名包"
+          fi
+
+      - name: Build APK (split per ABI)
+        run: npx tauri android build --apk --split-per-abi
+
+      - name: Build AAB (Play Store)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npx tauri android build --aab
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bilscore-android-${{ inputs.mode || 'public' }}-${{ github.ref_name }}
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+          generate_release_notes: true

@@ -1,6 +1,7 @@
 # Node.js
 node_modules/
 dist/
+dist-ssr/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -31,6 +32,14 @@ src-tauri/gen/android/.externalNativeBuild
 src-tauri/gen/android/.cxx/
 src-tauri/gen/android/captures/
 
+# --- V1.2.1 新增：签名与本地配置（绝不入库）---
+src-tauri/gen/android/key.properties
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/app/*.jks
+src-tauri/gen/android/app/*.keystore
+# tauri.properties 由 tauri android build 依据 tauri.conf.json 自动生成
+src-tauri/gen/android/app/tauri.properties
+
 # IDEs
 .vscode/*
 !.vscode/extensions.json
@@ -42,7 +51,9 @@ src-tauri/gen/android/captures/
 *.sw?
 
 *.py
-*.xml
+# 只忽略根目录的 repomix 导出快照（原 *.xml 会把 Android 的 AndroidManifest.xml、
+# res/values/*.xml、res/xml/file_paths.xml 全部吞掉，导致 CI 拉代码后工程不可用）
+/repomix-output.xml
 # --- V1.1.0 新增过滤规则 ---
 # 过滤打包产物目录
 release_apks/

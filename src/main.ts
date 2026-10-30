@@ -1,7 +1,30 @@
 import { createApp } from "vue";
 import App from "./App.vue";
 import router from "./router";
+import { flushOnExit } from "./store";
+import { installDiagnostics, markMounted, bootLog } from "./utils/diag";
 
-const app = createApp(App);
-app.use(router);
-app.mount("#app");
+installDiagnostics();
+
+try {
+  const app = createApp(App);
+  app.config.errorHandler = (err, _instance, info) => {
+    console.error("[BilScore][vue-error]", info, err);
+  };
+  app.use(router);
+  app.mount("#app");
+  markMounted();
+} catch (e) {
+  console.error("[BilScore][mount-failed]", e);
+  throw e;
+}
+
+router.afterEach((to, from) => {
+  bootLog('router', `${String(from.path)} -> ${String(to.path)}`);
+});
+
+// 历史记录写入做了防抖，这里保证切后台/关闭前一定落盘
+window.addEventListener("pagehide", flushOnExit);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushOnExit();
+});

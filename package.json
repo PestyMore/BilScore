@@ -1,7 +1,7 @@
 {
   "name": "bilscore",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "pack": "repomix --config repomix.config.json",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "smoke": "vite build --ssr scripts/ssr-smoke.ts --outDir dist-ssr --logLevel error && node --import ./scripts/mock-env.mjs dist-ssr/ssr-smoke.js",
     "dev:pub": "vite --mode public",
     "dev:per": "vite --mode personal",
     "build:pub": "vue-tsc --noEmit && vite build --mode public",

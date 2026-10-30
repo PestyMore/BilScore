@@ -2,39 +2,93 @@
 import { useRouter } from 'vue-router';
 import { gameStore } from '../../store';
 import { AppConfig } from '../../config';
+import AppIcon from '../../components/AppIcon.vue';
+import EmptyState from '../../components/EmptyState.vue';
+
 const router = useRouter();
 </script>
 
 <template>
-  <div class="page-container">
-    <div class="top-bar">
-      <button class="icon-btn" @click="router.push('/')">返回</button>
-      <h2>事件规则</h2>
-      <button class="icon-btn" style="font-size: 24px;" @click="router.push('/events/new')">+</button>
-    </div>
-    <div class="list">
-      <div v-if="gameStore.customEvents.length === 0" class="empty">暂无自定义事件，请添加。</div>
-      <div v-for="event in gameStore.customEvents" :key="event.id" class="list-item" @click="router.push(`/events/${event.id}`)">
-        <div class="e-info">
-          <span class="event-name">{{ event.name }}</span>
-          <span v-if="AppConfig.isPersonal && event.isBuiltIn" class="builtin-badge">默认</span>
-        </div>
-        <span class="event-score" :class="{ 'is-plus': event.targetType.includes('take') }">
-          {{ event.targetType.includes('take') ? '+' : '-' }}{{ event.score }}
-        </span>
+  <div class="page">
+    <header class="nav-bar">
+      <div class="nav-side">
+        <button class="icon-btn ghost" @click="router.push('/')" aria-label="返回">
+          <AppIcon name="arrow-left" :size="20" />
+        </button>
       </div>
+      <div class="nav-title">计分规则</div>
+      <div class="nav-side right">
+        <button class="icon-btn ghost primary" @click="router.push('/events/new')" aria-label="新建">
+          <AppIcon name="plus" :size="21" />
+        </button>
+      </div>
+    </header>
+
+    <div class="scroll">
+      <template v-if="gameStore.customEvents.length">
+        <div class="section-title">共 {{ gameStore.customEvents.length }} 条</div>
+        <div class="card list">
+          <div
+            v-for="event in gameStore.customEvents"
+            :key="event.id"
+            class="row"
+            @click="router.push(`/events/${event.id}`)"
+          >
+            <div class="row-main">
+              <div class="row-title">
+                {{ event.name }}
+                <span v-if="AppConfig.isPersonal && event.isBuiltIn" class="chip primary">默认</span>
+              </div>
+            </div>
+            <span class="score" :class="{ plus: event.targetType.includes('take') }">
+              {{ event.targetType.includes('take') ? '+' : '-' }}{{ event.score }}
+            </span>
+            <AppIcon name="chevron-right" :size="18" class="trail" />
+          </div>
+        </div>
+      </template>
+
+      <div v-else class="pad">
+        <EmptyState icon="sliders-horizontal" title="还没有计分规则" desc="例如「大金 +10」「犯规 -1」，对局中一键触发。">
+          <button class="btn btn-primary btn-block" @click="router.push('/events/new')">
+            <AppIcon name="plus" :size="18" />
+            <span>新建规则</span>
+          </button>
+        </EmptyState>
+      </div>
+
+      <div class="bottom-space"></div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-.list-item { background: var(--glass); padding: 20px; border-radius: 16px; border: var(--glass-border); display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: 0.2s; }
-.list-item:active { transform: scale(0.97); }
-.e-info { display: flex; align-items: center; gap: 10px; }
-.event-name { font-size: 17px; font-weight: 600; }
-.builtin-badge { background: rgba(0, 168, 255, 0.2); color: var(--primary); padding: 2px 6px; border-radius: 6px; font-size: 11px; font-weight: bold; }
-.event-score { color: var(--danger); font-weight: bold; font-size: 20px; font-family: monospace; }
-.event-score.is-plus { color: var(--success); }
-.empty { text-align: center; color: var(--text-muted); margin-top: 50px; }
+.pad {
+  padding: 0 var(--s4);
+}
+.list {
+  margin: 0 var(--s4);
+  overflow: hidden;
+}
+.row-title {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.score {
+  font-size: var(--f-lg);
+  font-weight: 800;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.score.plus {
+  color: var(--success);
+}
+.trail {
+  color: var(--text-3);
+}
+.bottom-space {
+  height: var(--s6);
+}
 </style>

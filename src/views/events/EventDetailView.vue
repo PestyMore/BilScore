@@ -3,48 +3,130 @@ import { computed, ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { gameStore } from '../../store';
 import { AppConfig } from '../../config';
-import { appConfirm } from '../../utils/dialog'; // New dialog
+import { appConfirm } from '../../utils/dialog';
 import type { CustomEvent } from '../../types';
+import AppIcon from '../../components/AppIcon.vue';
 
 const route = useRoute();
 const router = useRouter();
 const eventId = route.params.id as string;
 const event = computed(() => gameStore.customEvents.find((e: CustomEvent) => e.id === eventId));
-const targetMap: any = { give_prev: '给上家分', take_prev: '吃上家分', give_all: '给所有人分', take_all: '吃所有人分', take_custom: '吃指定玩家分', give_custom: '给指定玩家分' };
+const targetMap: Record<string, string> = {
+  give_prev: '给上家分',
+  take_prev: '吃上家分',
+  give_all: '给所有人分',
+  take_all: '吃所有人分',
+  take_custom: '吃指定玩家分',
+  give_custom: '给指定玩家分',
+};
 const editScore = ref(0);
+const isBuiltIn = computed(() => !!event.value?.isBuiltIn && AppConfig.isPersonal);
 
-onMounted(() => { if (event.value) editScore.value = event.value.score; });
+onMounted(() => {
+  if (event.value) editScore.value = event.value.score;
+});
 
-const saveScore = () => { gameStore.updateEventScore(eventId, editScore.value); router.back(); };
-const deleteEvent = async () => { 
-  const ok = await appConfirm('确定要删除此事件吗？', '删除事件');
-  if (ok) { gameStore.deleteEvent(eventId); router.back(); } 
+const saveScore = () => {
+  const next = Number(editScore.value);
+  if (!Number.isFinite(next)) return;
+  gameStore.updateEventScore(eventId, Math.trunc(next));
+  router.back();
+};
+
+const deleteEvent = async () => {
+  const ok = await appConfirm('确定要删除此规则吗？', '删除规则');
+  if (ok) {
+    gameStore.deleteEvent(eventId);
+    router.back();
+  }
 };
 </script>
+
 <template>
-  <div class="page-container" v-if="event">
-    <div class="top-bar"><button class="icon-btn" @click="router.back()">返回</button><h2>事件详情</h2><div style="width: 40px;"></div></div>
-    <div class="card">
-      <div class="row"><span class="label">名称</span> <span class="val">{{ event.name }} <span v-if="AppConfig.isPersonal && event.isBuiltIn" class="builtin-badge">系统预设</span></span></div>
-      <div class="row"><span class="label">结算规则</span> <span class="val">{{ targetMap[event.targetType] }}</span></div>
-      <div class="row"><span class="label">换轮洗牌</span> <span class="val">{{ event.isNextRound ? '是' : '否' }}</span></div>
-      <div class="row score-row"><span class="label">分数变动</span> <input type="number" v-model.number="editScore" class="score-input" /></div>
-    </div>
-    <div class="action-group mt-auto">
-      <button class="btn btn-primary" @click="saveScore">保存修改</button>
-      <button v-if="!(AppConfig.isPersonal && event.isBuiltIn)" class="btn btn-danger" @click="deleteEvent">删除事件</button>
+  <div class="page" v-if="event">
+    <header class="nav-bar">
+      <div class="nav-side">
+        <button class="icon-btn ghost" @click="router.back()" aria-label="返回">
+          <AppIcon name="arrow-left" :size="20" />
+        </button>
+      </div>
+      <div class="nav-title">规则详情</div>
+      <div class="nav-side right"></div>
+    </header>
+
+    <div class="scroll">
+      <div class="card list">
+        <div class="row static">
+          <div class="row-main">
+            <div class="row-title">
+              {{ event.name }}
+              <span v-if="isBuiltIn" class="chip primary">系统预设</span>
+            </div>
+          </div>
+        </div>
+        <div class="row static">
+          <div class="row-main"><div class="row-title">结算方式</div></div>
+          <span class="value">{{ targetMap[event.targetType] || event.targetType }}</span>
+        </div>
+        <div class="row static">
+          <div class="row-main"><div class="row-title">换轮洗牌</div></div>
+          <span class="value">{{ event.isNextRound ? '开启' : '关闭' }}</span>
+        </div>
+        <div class="row static">
+          <div class="row-main"><div class="row-title">分数变动</div></div>
+          <input v-model.number="editScore" type="number" class="score-input" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary btn-block" @click="saveScore">
+          <AppIcon name="check" :size="19" />
+          <span>保存修改</span>
+        </button>
+        <button v-if="!isBuiltIn" class="btn btn-danger btn-block" @click="deleteEvent">
+          <AppIcon name="trash-2" :size="19" />
+          <span>删除规则</span>
+        </button>
+      </div>
+
+      <div class="bottom-space"></div>
     </div>
   </div>
 </template>
+
 <style scoped>
-.card { background: var(--glass); border-radius: 16px; border: var(--glass-border); padding: 5px 20px; margin-bottom: 30px; }
-.row { display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 16px; }
-.row:last-child { border-bottom: none; }
-.label { color: var(--text-muted); }
-.val { font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.builtin-badge { background: rgba(0, 168, 255, 0.2); color: var(--primary); padding: 2px 6px; border-radius: 6px; font-size: 11px; }
-.score-row { padding: 10px 0; }
-.score-input { width: 80px; padding: 8px; text-align: right; font-size: 18px; font-weight: bold; background: rgba(0,0,0,0.2); color: var(--primary); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); }
-.action-group { display: flex; flex-direction: column; gap: 12px; }
-.mt-auto { margin-top: auto; }
+.list {
+  margin: var(--s2) var(--s4) var(--s6);
+  overflow: hidden;
+}
+.value {
+  font-size: var(--f-base);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.score-input {
+  width: 92px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-solid);
+  color: var(--text-1);
+  font-size: var(--f-md);
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.score-input:focus {
+  border-color: var(--primary);
+}
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: 0 var(--s4);
+}
+.bottom-space {
+  height: var(--s6);
+}
 </style>

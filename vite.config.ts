@@ -16,7 +16,9 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // true = 监听 0.0.0.0。写成具体 IP 时，某些 NAT/虚拟网卡环境下模拟器会连不上，
+    // 表现为"装上了但一片白"，所以移动端开发统一放开所有网卡。
+    host: host ? true : false,
     hmr: host
       ? {
           protocol: "ws",

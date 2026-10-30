@@ -2,7 +2,7 @@ mod models;
 mod game_core;
 
 use std::sync::Mutex;
-use tauri::State; // Removed unused 'Manager'
+use tauri::State;
 use crate::game_core::GameCore;
 use crate::models::{Player, CustomEvent, GameState};
 
@@ -22,15 +22,17 @@ fn resume_game_state(state: State<AppState>, game_state: GameState) -> GameState
     game.resume_game(game_state)
 }
 
+/// 按玩家 id 触发事件。
+/// 早期版本用数组下标寻址，洗牌重排后前端持有的下标会失效，连点时会记错人。
 #[tauri::command]
 fn trigger_event(
-    state: State<AppState>, 
-    player_index: usize, 
-    event: CustomEvent, 
-    target_index: Option<usize>
+    state: State<AppState>,
+    player_id: String,
+    event: CustomEvent,
+    target_id: Option<String>,
 ) -> GameState {
     let mut game = state.game.lock().unwrap();
-    game.trigger_event(player_index, event, target_index)
+    game.trigger_event(&player_id, event, target_id.as_deref())
 }
 
 #[tauri::command]
@@ -72,7 +74,6 @@ fn apply_custom_order(state: State<AppState>, ordered_ids: Vec<String>) -> GameS
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .manage(AppState {
             game: Mutex::new(GameCore::new())
         })
