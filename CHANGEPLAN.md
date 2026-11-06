@@ -184,6 +184,18 @@
 | 保留已生效的链接修复 | 全仓 | 不回退 Xcode 16 / iOS 16 / 绝对路径三层 |
 | 重新触发构建 | 版本号 + `v2.0.3` tag | tag 推送后双端自动重跑 |
 
+### CP-13　交互反馈、状态语义与图标　`完成`
+
+> 用户真机体验反馈：按钮无点击反馈；「击球中」与选中态语义混淆；图标可再挑一挑。
+
+| 目标 | 涉及文件 | 验收标准 |
+| --- | --- | --- |
+| 点击即时反馈 | `src/utils/press.ts`（新建）、`src/App.vue`、`src/main.ts` | 一次性波纹 + 按钮震动，只用 transform/opacity，无常驻动画 |
+| 更多但克制的动效 | `src/App.vue`、`GameView.vue`、`PlayerCard.vue` | 分数弹跳、轮次切换、卡片入场；reduce-motion 全关闭 |
+| 开球位 / 选中态分离 | `PlayerCard.vue`、`GameView.vue` | 第 1 位标「本轮开球」，选中用主色独立表达 |
+| Lucide 图标替换 | `src/icons.ts`、`gen-icons.mjs`、`AppIcon.vue` | 新增 3 个图标、清单同步、描边微调 |
+| 本机验证与推送 | — | build + smoke 各 1 次全绿，`v2.0.4` tag 触发出包 |
+
 ## 五、验证策略
 
 - 本机：`npm run build`（类型检查 + 生产构建）→ `npm run smoke`（9 条路由 SSR + 图标完整性），各一次，秒级。

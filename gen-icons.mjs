@@ -13,10 +13,11 @@ const root = dirname(fileURLToPath(import.meta.url));
 
 const names = [
   'arrow-down-up', 'arrow-left', 'check', 'chevron-down', 'chevron-right',
-  'circle-dot', 'crown', 'flag', 'history', 'moon', 'pencil', 'play',
-  'plus', 'repeat', 'rotate-ccw', 'sliders-horizontal', 'sun', 'target',
-  'trophy', 'trash-2', 'triangle-alert', 'undo-2', 'user-minus',
-  'user-plus', 'user-round', 'users', 'x',
+  'circle-dot', 'circle-stop', 'crown', 'flag', 'history', 'list-ordered',
+  'moon', 'pencil', 'play', 'plus', 'repeat', 'rotate-ccw',
+  'sliders-horizontal', 'sparkles', 'sun', 'target', 'trophy', 'trash-2',
+  'triangle-alert', 'undo-2', 'user-minus', 'user-plus', 'user-round',
+  'users', 'x',
 ];
 
 const out = [];

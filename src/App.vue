@@ -239,7 +239,7 @@ input {
     background var(--d1) var(--ease);
 }
 .btn:active:not(:disabled) {
-  transform: scale(0.972);
+  transform: scale(0.955);
 }
 .btn:disabled {
   opacity: 0.42;
@@ -281,7 +281,7 @@ input {
     opacity var(--d1) var(--ease);
 }
 .icon-btn:active:not(:disabled) {
-  transform: scale(0.92);
+  transform: scale(0.87);
 }
 .icon-btn.ghost {
   background: transparent;
@@ -325,6 +325,55 @@ input {
 .text-btn.muted {
   color: var(--text-2);
 }
+
+/* ---------- 点击反馈（由 utils/press.ts 驱动） ---------- */
+.btn, .icon-btn, .text-btn, .row, .tile, .start-card,
+.resume-card, .match, .p-card, .ev-btn, .pick, .target-btn,
+.menu-item, .segmented button, .hint-btn, .match-del, .switch-row {
+  position: relative;
+  overflow: hidden;
+}
+.is-pressed {
+  /* 只缩短过渡时长，让 :active 缩放立刻可见；不引入额外合成层 */
+  transition-duration: 90ms;
+}
+.press-wave {
+  position: absolute;
+  left: var(--press-x, 50%);
+  top: var(--press-y, 50%);
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  transform: scale(0);
+  pointer-events: none;
+  animation: press-wave 420ms var(--ease) forwards;
+}
+@keyframes press-wave {
+  0% { transform: scale(0); opacity: 0.2; }
+  100% { transform: scale(var(--press-scale, 20)); opacity: 0; }
+}
+
+/* ---------- 入场 / 数值变化动效（只用 transform + opacity） ---------- */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes score-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.16); }
+  100% { transform: scale(1); }
+}
+/* backwards：仅延迟期间保持起始态，动画结束后 :active 的 transform 仍可用 */
+.start-card, .resume-card { animation: card-in 320ms var(--ease) backwards; }
+.tile, .match { animation: card-in 300ms var(--ease) 60ms backwards; }
+.p-card {
+  animation: card-in 280ms var(--ease) backwards;
+  animation-delay: calc(var(--card-i, 0) * 32ms);
+}
+.p-score.flash { animation: score-pop 420ms var(--ease); }
 
 /* ---------- 卡片 / 列表 ---------- */
 .card {
@@ -649,7 +698,7 @@ input {
 }
 .page-enter-from {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(12px);
 }
 .page-leave-to {
   opacity: 0;
@@ -667,6 +716,7 @@ input {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
   }
 }

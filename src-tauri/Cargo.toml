@@ -1,6 +1,6 @@
 [package]
 name = "bilscore"
-version = "2.0.3"
+version = "2.0.4"
 description = "BilScore billiards scorekeeper"
 authors = ["you"]
 edition = "2021"

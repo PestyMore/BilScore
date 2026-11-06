@@ -4,10 +4,12 @@ import router from "./router";
 import { flushOnExit } from "./store";
 import { installDiagnostics, markMounted, bootLog } from "./utils/diag";
 import { readTheme, applyTheme } from "./utils/theme";
+import { installPressFeedback } from "./utils/press";
 
 // 必须在挂载（乃至诊断日志）之前设置，浅色主题才不会首帧闪暗。
 applyTheme(readTheme());
 installDiagnostics();
+installPressFeedback();
 
 try {
   const app = createApp(App);

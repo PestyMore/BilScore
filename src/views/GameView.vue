@@ -57,6 +57,30 @@ const spread = computed(() => {
   return Math.max(...ps.map((p) => p.score)) - Math.min(...ps.map((p) => p.score));
 });
 
+// 分数变化动效：只监听「id:分数」拼成的字符串，避免深度监听整个玩家数组
+const previousScores = ref<Record<string, number>>({});
+const flashed = ref<Set<string>>(new Set());
+let flashTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(
+  () => gameStore.currentPlayers.map((p) => `${p.id}:${p.score}`).join('|'),
+  () => {
+    const changed = new Set<string>();
+    const next: Record<string, number> = {};
+    for (const p of gameStore.currentPlayers) {
+      const before = previousScores.value[p.id];
+      if (before !== undefined && before !== p.score) changed.add(p.id);
+      next[p.id] = p.score;
+    }
+    previousScores.value = next;
+    if (changed.size === 0) return;
+    flashed.value = changed;
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { flashed.value = new Set(); }, 460);
+  },
+  { immediate: true }
+);
+
 // 平板 / 大屏用常驻操作台，手机用底部抽屉；这是结构性差异，用 matchMedia 决定
 let wideQuery: MediaQueryList | null = null;
 const syncWide = () => { isWide.value = window.matchMedia('(min-width: 900px)').matches; };
@@ -196,7 +220,9 @@ const endGame = async () => {
 
         <div class="round">
           <span class="round-label">ROUND</span>
-          <span class="round-num">{{ gameStore.currentRound }}</span>
+          <Transition name="round-pop" mode="out-in">
+            <span :key="gameStore.currentRound" class="round-num">{{ gameStore.currentRound }}</span>
+          </Transition>
         </div>
 
         <div class="tools">
@@ -204,13 +230,13 @@ const endGame = async () => {
             <AppIcon name="user-plus" :size="19" />
           </button>
           <button class="icon-btn" @click="openReorder" aria-label="排序">
-            <AppIcon name="arrow-down-up" :size="19" />
+            <AppIcon name="list-ordered" :size="19" />
           </button>
           <button class="icon-btn" :disabled="gameStore.historyLen === 0" @click="undoAction" aria-label="撤销">
             <AppIcon name="undo-2" :size="19" />
           </button>
           <button class="icon-btn" @click="endGame" aria-label="结束对局">
-            <AppIcon name="flag" :size="19" />
+            <AppIcon name="circle-stop" :size="19" />
           </button>
         </div>
       </div>
@@ -232,9 +258,12 @@ const endGame = async () => {
             <PlayerCard
               v-for="(p, i) in gameStore.currentPlayers"
               :key="p.id"
+              :style="{ '--card-i': i }"
               :player="p"
               :index="i"
-              :current="i === 0"
+              :lead="i === 0"
+              :selected="p.id === selectedPlayerId"
+              :flash="flashed.has(p.id)"
               :tags="playerTags[p.id] || []"
               @select="openFor(p.id)"
             />
@@ -327,11 +356,26 @@ const endGame = async () => {
   color: var(--gold);
 }
 .round-num {
+  display: block;
   font-size: 22px;
   font-weight: 800;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   color: var(--text-1);
+}
+.round-pop-enter-active {
+  transition: transform 220ms var(--ease), opacity 220ms var(--ease);
+}
+.round-pop-enter-from {
+  transform: translateY(-8px) scale(0.82);
+  opacity: 0;
+}
+.round-pop-leave-active {
+  transition: transform 140ms var(--ease), opacity 140ms var(--ease);
+}
+.round-pop-leave-to {
+  transform: translateY(8px) scale(0.82);
+  opacity: 0;
 }
 .tools {
   display: flex;

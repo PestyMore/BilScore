@@ -76,7 +76,7 @@ const removeRecord = async (id: string) => {
     <PageNav :back="false">
       <template #left>
         <span class="brand">
-          <AppIcon name="circle-dot" :size="21" />
+          <AppIcon name="circle-dot" :size="22" :stroke="2.2" />
           <span>BilScore</span>
         </span>
       </template>

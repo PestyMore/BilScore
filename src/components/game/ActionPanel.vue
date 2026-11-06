@@ -72,6 +72,9 @@ const timeOf = (ts: number) => {
 };
 
 const deltaText = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+
+// 与对局页的烟花条件保持一致：高分换轮事件才点亮
+const isFeatured = (ev: CustomEvent) => isPositive(ev) && ev.isNextRound && ev.score >= 7;
 </script>
 
 <template>
@@ -134,6 +137,7 @@ const deltaText = (n: number) => (n > 0 ? `+${n}` : `${n}`);
                   :disabled="busy"
                   @click="onEventClick(ev.id)"
                 >
+                  <AppIcon v-if="isFeatured(ev)" name="sparkles" :size="13" class="ev-spark" />
                   <span class="ev-name">{{ ev.name }}</span>
                   <span class="ev-score">{{ scoreLabel(ev) }}</span>
                 </button>
@@ -149,6 +153,7 @@ const deltaText = (n: number) => (n > 0 ? `+${n}` : `${n}`);
                   :disabled="busy"
                   @click="onEventClick(ev.id)"
                 >
+                  <AppIcon v-if="isFeatured(ev)" name="sparkles" :size="13" class="ev-spark" />
                   <span class="ev-name">{{ ev.name }}</span>
                   <span class="ev-score">{{ scoreLabel(ev) }}</span>
                 </button>
@@ -166,6 +171,7 @@ const deltaText = (n: number) => (n > 0 ? `+${n}` : `${n}`);
                 :disabled="busy"
                 @click="onEventClick(ev.id)"
               >
+                <AppIcon v-if="isFeatured(ev)" name="sparkles" :size="13" class="ev-spark" />
                 <span class="ev-name">{{ ev.name }}</span>
                 <span class="ev-score">{{ scoreLabel(ev) }}</span>
               </button>
@@ -335,9 +341,15 @@ const deltaText = (n: number) => (n > 0 ? `+${n}` : `${n}`);
   opacity: 0.45;
 }
 .ev-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ev-spark {
+  color: var(--gold);
+  flex: none;
 }
 .ev-score {
   font-variant-numeric: tabular-nums;
@@ -437,6 +449,11 @@ const deltaText = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 }
 .log-delta.negative {
   color: var(--danger);
+}
+@media (max-width: 399px) {
+  .ev-spark {
+    display: none;
+  }
 }
 @media (max-width: 359px) {
   .ev-grid,

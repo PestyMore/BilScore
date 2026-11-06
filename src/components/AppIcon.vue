@@ -7,7 +7,7 @@ const props = withDefaults(
     size?: number | string;
     stroke?: number;
   }>(),
-  { size: 22, stroke: 1.75 }
+  { size: 22, stroke: 1.9 }
 );
 </script>
 
