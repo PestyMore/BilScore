@@ -40,6 +40,7 @@ const cases: { path: string; expect: string[] }[] = [
   { path: '/game', expect: ['ROUND'] },
   { path: '/events', expect: ['计分规则', '大金'] },
   { path: '/events/new', expect: ['新建规则'] },
+  { path: '/events/e_1', expect: ['规则详情', '大金'] },
   { path: '/players', expect: ['玩家库', '张三'] },
   { path: '/players/new', expect: ['新建玩家'] },
   // 同一个组件靠 :id 切换成编辑模式，这里断言它确实预填了玩家数据

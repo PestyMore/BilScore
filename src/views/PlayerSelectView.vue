@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { gameStore } from '../store';
+import { gameStore, MAX_PLAYERS } from '../store';
 import { guard } from '../utils/invoke';
+import { appAlert } from '../utils/dialog';
 import AppIcon from '../components/AppIcon.vue';
+import PageNav from '../components/PageNav.vue';
 import PlayerAvatar from '../components/PlayerAvatar.vue';
 import EmptyState from '../components/EmptyState.vue';
 
@@ -12,20 +14,23 @@ const selectedIds = ref<string[]>([]);
 const starting = ref(false);
 
 const canStart = computed(() => selectedIds.value.length >= 2 && !starting.value);
+const full = computed(() => selectedIds.value.length >= MAX_PLAYERS);
+const allSelected = computed(
+  () => selectedIds.value.length === Math.min(gameStore.savedPlayers.length, MAX_PLAYERS) && selectedIds.value.length > 0
+);
+
+const orderOf = (id: string) => selectedIds.value.indexOf(id) + 1;
+const isSelected = (id: string) => selectedIds.value.includes(id);
 
 const toggleSelect = (id: string) => {
   const i = selectedIds.value.indexOf(id);
-  if (i === -1) selectedIds.value.push(id);
-  else selectedIds.value.splice(i, 1);
+  if (i > -1) selectedIds.value.splice(i, 1);
+  else if (full.value) appAlert(`一局最多 ${MAX_PLAYERS} 人`, '人数上限');
+  else selectedIds.value.push(id);
 };
 
-const isSelected = (id: string) => selectedIds.value.includes(id);
-
-const allSelected = computed(
-  () => selectedIds.value.length === gameStore.savedPlayers.length && selectedIds.value.length > 0
-);
 const toggleAll = () => {
-  selectedIds.value = allSelected.value ? [] : gameStore.savedPlayers.map((p) => p.id);
+  selectedIds.value = allSelected.value ? [] : gameStore.savedPlayers.slice(0, MAX_PLAYERS).map((p) => p.id);
 };
 
 const startGame = async () => {
@@ -42,20 +47,14 @@ const startGame = async () => {
 
 <template>
   <div class="page">
-    <header class="nav-bar">
-      <div class="nav-side">
-        <button class="icon-btn ghost" @click="router.back()" aria-label="返回">
-          <AppIcon name="arrow-left" :size="20" />
-        </button>
-      </div>
-      <div class="nav-title">挑选参赛玩家</div>
-      <div class="nav-side right">
-        <span class="chip" :class="{ primary: canStart }">已选 {{ selectedIds.length }}</span>
-      </div>
-    </header>
+    <PageNav title="挑选参赛玩家">
+      <template #right>
+        <span class="chip" :class="{ primary: canStart }">{{ selectedIds.length }} / {{ MAX_PLAYERS }}</span>
+      </template>
+    </PageNav>
 
     <template v-if="gameStore.savedPlayers.length === 0">
-      <div class="pad">
+      <div class="content pad">
         <EmptyState icon="users" title="玩家库还是空的" desc="先添加至少两位玩家，才能开始一局比赛。">
           <button class="btn btn-primary btn-block" @click="router.push('/players/new')">
             <AppIcon name="plus" :size="18" />
@@ -67,38 +66,39 @@ const startGame = async () => {
 
     <template v-else>
       <div class="scroll">
-        <div class="hint">
-          <AppIcon name="target" :size="14" />
-          <span>至少 2 人，选中顺序即为初始击球顺序</span>
-          <button class="hint-btn" @click="toggleAll">{{ allSelected ? '清空' : '全选' }}</button>
-        </div>
+        <div class="content">
+          <div class="hint">
+            <AppIcon name="target" :size="15" />
+            <span>至少 2 人，最多 {{ MAX_PLAYERS }} 人；选中顺序即初始击球顺序</span>
+            <button class="hint-btn" @click="toggleAll">{{ allSelected ? '清空' : '全选' }}</button>
+          </div>
 
-        <div class="card list">
-          <div
-            v-for="p in gameStore.savedPlayers"
-            :key="p.id"
-            class="row"
-            :class="{ selected: isSelected(p.id) }"
-            @click="toggleSelect(p.id)"
-          >
-            <PlayerAvatar :name="p.name" :color="p.avatarColor" :size="38" />
-            <div class="row-main">
-              <div class="row-title">{{ p.name }}</div>
-            </div>
-            <div class="tick" :class="{ on: isSelected(p.id) }">
-              <AppIcon v-if="isSelected(p.id)" name="check" :size="16" :stroke="2.4" />
+          <div class="card list">
+            <div
+              v-for="p in gameStore.savedPlayers"
+              :key="p.id"
+              class="row"
+              :class="{ selected: isSelected(p.id) }"
+              @click="toggleSelect(p.id)"
+            >
+              <PlayerAvatar :name="p.name" :color="p.avatarColor" :size="38" />
+              <div class="row-main">
+                <div class="row-title">{{ p.name }}</div>
+              </div>
+              <span v-if="isSelected(p.id)" class="order-badge">{{ orderOf(p.id) }}</span>
+              <span v-else class="tick"></span>
             </div>
           </div>
         </div>
-
-        <div class="bottom-space"></div>
       </div>
 
       <div class="bottom-bar">
-        <button class="btn btn-primary btn-block" :disabled="!canStart" @click="startGame">
-          <AppIcon name="play" :size="19" />
-          <span>{{ starting ? '正在开局…' : '开始比赛' }}</span>
-        </button>
+        <div class="content">
+          <button class="btn btn-primary btn-block" :disabled="!canStart" @click="startGame">
+            <AppIcon name="play" :size="19" />
+            <span>{{ starting ? '正在开局…' : `开始比赛（${selectedIds.length} 人）` }}</span>
+          </button>
+        </div>
       </div>
     </template>
   </div>
@@ -106,15 +106,18 @@ const startGame = async () => {
 
 <style scoped>
 .pad {
-  padding: 0 var(--s4);
+  padding-top: var(--s5);
 }
 .hint {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  padding: var(--s2) var(--s5) var(--s4);
+  padding: var(--s2) 0 var(--s4);
   font-size: var(--f-sm);
   color: var(--text-3);
+}
+.hint :deep(.app-icon) {
+  flex: none;
 }
 .hint-btn {
   margin-left: auto;
@@ -122,43 +125,36 @@ const startGame = async () => {
   background: none;
   color: var(--primary);
   font-size: var(--f-sm);
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
   padding: var(--s1) var(--s2);
+  white-space: nowrap;
 }
 .hint-btn:active {
   opacity: 0.5;
 }
-.list {
-  margin: 0 var(--s4);
-  overflow: hidden;
-}
-.list .row:first-child {
-  border-radius: var(--r-md) var(--r-md) 0 0;
-}
-.list .row:last-child {
-  border-radius: 0 0 var(--r-md) var(--r-md);
-}
 .row.selected {
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  background: var(--primary-soft);
+}
+.order-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--r-full);
+  background: var(--primary-grad);
+  color: #fff;
+  font-size: var(--f-sm);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
 }
 .tick {
   width: 24px;
   height: 24px;
   border-radius: var(--r-full);
   border: 1.8px solid var(--border-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
   flex: none;
-  transition: background var(--d1) var(--ease), border-color var(--d1) var(--ease);
-}
-.tick.on {
-  background: var(--primary);
-  border-color: var(--primary);
-}
-.bottom-space {
-  height: var(--s6);
 }
 </style>

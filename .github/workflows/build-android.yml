@@ -15,6 +15,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   android:
     name: Android (${{ inputs.mode || 'public' }})
@@ -82,12 +85,14 @@ jobs:
             echo "未检测到 ANDROID_KEYSTORE_BASE64，将输出未签名包"
           fi
 
-      - name: Build APK (split per ABI)
-        run: npx tauri android build --apk --split-per-abi
-
-      - name: Build AAB (Play Store)
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: npx tauri android build --aab
+      # APK 与 AAB 一次编译产出，避免 tag 构建把整个 Rust/Gradle 流程跑两遍
+      - name: Build APK (and AAB on tag)
+        run: |
+          if [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
+            npx tauri android build --apk --aab --split-per-abi
+          else
+            npx tauri android build --apk --split-per-abi
+          fi
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4

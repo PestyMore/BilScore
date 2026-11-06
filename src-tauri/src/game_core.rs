@@ -4,6 +4,15 @@ use rand::thread_rng;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+/// 一局的合法人数范围。前端只做提示，真正的边界在这里兜底，
+/// 避免 invoke 被直接调用时把阵容改到 1 人或无限多人。
+pub const MIN_PLAYERS: usize = 2;
+pub const MAX_PLAYERS: usize = 8;
+
+const VALID_TARGET_TYPES: [&str; 6] = [
+    "give_prev", "take_prev", "give_all", "take_all", "give_custom", "take_custom",
+];
+
 pub struct GameCore {
     pub current_game_id: Option<String>,
     pub current_round: i32,
@@ -78,6 +87,12 @@ impl GameCore {
         };
         let n = self.current_players.len() as i32;
         if n == 0 {
+            return self.get_state();
+        }
+
+        // 结算方式不认识时直接返回：否则会白白消耗一步撤销、记一次事件统计，
+        // 甚至触发换轮洗牌，但分数其实完全没变。
+        if !VALID_TARGET_TYPES.contains(&event.target_type.as_str()) {
             return self.get_state();
         }
 
@@ -217,11 +232,16 @@ impl GameCore {
             p.id = new_player.id;
             p.name = new_player.name;
             p.avatar_color = new_player.avatar_color;
+            // 分数属于这个席位，事件统计属于原来那个人：换人后不应继承前任的战绩标签。
+            p.triggered_events = HashMap::new();
         }
         self.get_state()
     }
 
     pub fn add_player(&mut self, mut new_player: Player) -> GameState {
+        if self.current_players.len() >= MAX_PLAYERS {
+            return self.get_state();
+        }
         self.save_snapshot();
         new_player.score = 0;
         new_player.triggered_events = HashMap::new();
@@ -233,6 +253,9 @@ impl GameCore {
         let Some(idx) = self.current_players.iter().position(|p| p.id == player_id) else {
             return self.get_state();
         };
+        if self.current_players.len() <= MIN_PLAYERS {
+            return self.get_state();
+        }
         self.save_snapshot();
         self.current_players.remove(idx);
         self.get_state()
@@ -542,5 +565,57 @@ mod tests {
         game.trigger_event("a", event("dajin", "take_all", 10, true), None);
         assert_eq!(ids(&game), vec!["a"]);
         assert_eq!(scores(&game), vec![0]);
+    }
+
+    #[test]
+    fn unknown_target_type_is_a_pure_noop() {
+        let mut game = GameCore::new();
+        game.init_game(vec![player("a"), player("b")]);
+
+        let state = game.trigger_event("a", event("broken", "typo", 10, true), None);
+        assert_eq!(scores(&game), vec![0, 0]);
+        assert_eq!(game.current_round, 1);
+        assert_eq!(state.history_len, 0);
+        assert!(game.current_players[0].triggered_events.is_empty());
+    }
+
+    #[test]
+    fn player_count_is_bounded_2_to_8() {
+        let mut game = GameCore::new();
+        game.init_game(vec![player("a"), player("b")]);
+
+        for id in ["c", "d", "e", "f", "g", "h"] {
+            game.add_player(player(id));
+        }
+        assert_eq!(game.current_players.len(), MAX_PLAYERS);
+        let before_add = game.history_stack.len();
+        game.add_player(player("i"));
+        assert_eq!(game.current_players.len(), MAX_PLAYERS);
+        assert_eq!(game.history_stack.len(), before_add, "越界加人不该占撤销步数");
+
+        for id in ["h", "g", "f", "e", "d", "c"] {
+            game.remove_player(id.to_string());
+        }
+        assert_eq!(game.current_players.len(), MIN_PLAYERS);
+        let before_remove = game.history_stack.len();
+        game.remove_player("b".to_string());
+        assert_eq!(game.current_players.len(), MIN_PLAYERS);
+        assert_eq!(game.history_stack.len(), before_remove);
+    }
+
+    #[test]
+    fn replace_player_keeps_score_but_resets_event_stats() {
+        let mut game = GameCore::new();
+        game.init_game(vec![player("a"), player("b")]);
+        game.trigger_event("b", event("dajin", "take_all", 10, false), None);
+        assert_eq!(
+            game.current_players[1].triggered_events.get("dajin").copied(),
+            Some(1)
+        );
+
+        game.replace_player("b".to_string(), player("z"));
+        assert_eq!(ids(&game), vec!["a", "z"]);
+        assert_eq!(scores(&game), vec![-10, 10]);
+        assert!(game.current_players[1].triggered_events.is_empty());
     }
 }

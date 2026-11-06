@@ -3,7 +3,10 @@ import App from "./App.vue";
 import router from "./router";
 import { flushOnExit } from "./store";
 import { installDiagnostics, markMounted, bootLog } from "./utils/diag";
+import { readTheme, applyTheme } from "./utils/theme";
 
+// 必须在挂载（乃至诊断日志）之前设置，浅色主题才不会首帧闪暗。
+applyTheme(readTheme());
 installDiagnostics();
 
 try {
@@ -23,7 +26,7 @@ router.afterEach((to, from) => {
   bootLog('router', `${String(from.path)} -> ${String(to.path)}`);
 });
 
-// 历史记录写入做了防抖，这里保证切后台/关闭前一定落盘
+// 历史记录与活跃对局写入做了防抖，这里保证切后台/关闭前一定落盘
 window.addEventListener("pagehide", flushOnExit);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") flushOnExit();

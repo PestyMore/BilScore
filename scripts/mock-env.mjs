@@ -11,6 +11,8 @@ const players = [
   { id: 'u_3', name: 'Wang', avatarColor: '#2ed573' },
 ];
 
+const gamePlayers = players.map((p) => ({ ...p, score: 7, triggeredEvents: { e_1: 2 } }));
+
 store.set('bilscore_players', JSON.stringify(players));
 store.set(
   'bilscore_events',
@@ -26,9 +28,22 @@ store.set(
       id: 'game_smoke',
       lastEdited: Date.now(),
       round: 3,
-      players: players.map((p) => ({ ...p, score: 7, triggeredEvents: { e_1: 2 } })),
+      players: gamePlayers,
     },
   ])
+);
+// 活跃对局：让首页「继续上一局」分支也进入 SSR 冒烟覆盖范围
+store.set(
+  'bilscore_active',
+  JSON.stringify({
+    id: 'game_smoke',
+    round: 3,
+    players: gamePlayers,
+    log: [
+      { seq: 1, round: 3, actor: '张三', label: '大金', delta: 14, at: Date.now() },
+    ],
+    savedAt: Date.now(),
+  })
 );
 
 globalThis.localStorage = {

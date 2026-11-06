@@ -1,12 +1,16 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { gameStore } from '../../store';
 import { appConfirm } from '../../utils/dialog';
 import AppIcon from '../../components/AppIcon.vue';
+import PageNav from '../../components/PageNav.vue';
 import PlayerAvatar from '../../components/PlayerAvatar.vue';
 import EmptyState from '../../components/EmptyState.vue';
 
 const router = useRouter();
+// 一次算好，避免模板里对每一行重复遍历历史
+const stats = computed(() => gameStore.playerStats);
 
 const deletePlayer = async (id: string) => {
   const ok = await appConfirm('确定要删除该玩家吗？', '删除玩家');
@@ -18,71 +22,58 @@ const editPlayer = (id: string) => router.push(`/players/${id}`);
 
 <template>
   <div class="page">
-    <header class="nav-bar">
-      <div class="nav-side">
-        <button class="icon-btn ghost" @click="router.push('/')" aria-label="返回">
-          <AppIcon name="arrow-left" :size="20" />
-        </button>
-      </div>
-      <div class="nav-title">玩家库</div>
-      <div class="nav-side right">
+    <PageNav title="玩家库" back="/">
+      <template #right>
         <button class="icon-btn ghost primary" @click="router.push('/players/new')" aria-label="新建">
           <AppIcon name="plus" :size="21" />
         </button>
-      </div>
-    </header>
+      </template>
+    </PageNav>
 
     <div class="scroll">
-      <template v-if="gameStore.savedPlayers.length">
-        <div class="section-title">共 {{ gameStore.savedPlayers.length }} 位</div>
-        <div class="card list">
-          <div v-for="p in gameStore.savedPlayers" :key="p.id" class="row" @click="editPlayer(p.id)">
-            <PlayerAvatar :name="p.name" :color="p.avatarColor" :size="38" />
-            <div class="row-main">
-              <div class="row-title">{{ p.name }}</div>
+      <div class="content">
+        <template v-if="gameStore.savedPlayers.length">
+          <div class="section-title">共 {{ gameStore.savedPlayers.length }} 位球友</div>
+          <div class="card list grid-2">
+            <div v-for="p in gameStore.savedPlayers" :key="p.id" class="row" @click="editPlayer(p.id)">
+              <PlayerAvatar :name="p.name" :color="p.avatarColor" :size="40" />
+              <div class="row-main">
+                <div class="row-title">{{ p.name }}</div>
+                <div class="row-sub">
+                  <template v-if="stats[p.id]">
+                    {{ stats[p.id].games }} 场 · {{ stats[p.id].wins }} 胜
+                  </template>
+                  <template v-else>还没有对局记录</template>
+                </div>
+              </div>
+              <button class="icon-btn ghost danger" @click.stop="deletePlayer(p.id)" aria-label="删除">
+                <AppIcon name="trash-2" :size="18" />
+              </button>
             </div>
-            <AppIcon name="chevron-right" :size="18" class="row-trail-icon" />
-            <button
-              class="icon-btn ghost danger"
-              @click.stop="deletePlayer(p.id)"
-              aria-label="删除"
-            >
-              <AppIcon name="trash-2" :size="19" />
-            </button>
           </div>
+        </template>
+
+        <div v-else>
+          <EmptyState icon="users" title="还没有玩家" desc="添加常用球友，之后开局可以直接勾选。">
+            <button class="btn btn-primary btn-block" @click="router.push('/players/new')">
+              <AppIcon name="plus" :size="18" />
+              <span>新建玩家</span>
+            </button>
+          </EmptyState>
         </div>
-      </template>
-
-      <div v-else class="pad">
-        <EmptyState icon="users" title="还没有玩家" desc="添加常用球友，之后开局可以直接勾选。">
-          <button class="btn btn-primary btn-block" @click="router.push('/players/new')">
-            <AppIcon name="plus" :size="18" />
-            <span>新建玩家</span>
-          </button>
-        </EmptyState>
       </div>
-
-      <div class="bottom-space"></div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.pad {
-  padding: 0 var(--s4);
-}
-.list {
-  margin: 0 var(--s4);
-  overflow: hidden;
+.grid-2 {
+  align-items: start;
 }
 .danger {
-  color: var(--danger);
-}
-.row-trail-icon {
   color: var(--text-3);
-  flex: none;
 }
-.bottom-space {
-  height: var(--s6);
+.danger:active {
+  color: var(--danger);
 }
 </style>

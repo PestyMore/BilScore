@@ -31,14 +31,14 @@ defineProps<{
   padding: 48px 24px;
 }
 .empty-icon {
-  width: 56px;
-  height: 56px;
+  width: 58px;
+  height: 58px;
   border-radius: var(--r-full);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-2);
-  color: var(--text-3);
+  background: var(--gold-soft);
+  color: var(--gold);
   margin-bottom: var(--s4);
 }
 .empty-title {

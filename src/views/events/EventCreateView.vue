@@ -3,18 +3,11 @@ import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { gameStore } from '../../store';
 import { appAlert } from '../../utils/dialog';
+import { newId } from '../../utils/id';
+import { TARGET_OPTIONS, TARGET_LABELS, isValidScore } from '../../utils/rules';
 import type { TargetType } from '../../types';
 import AppIcon from '../../components/AppIcon.vue';
-
-// 结算方式固定在模块级，避免每次渲染都重建数组
-const OPTIONS: { value: TargetType; label: string }[] = [
-  { value: 'take_all', label: '吃所有人分' },
-  { value: 'give_all', label: '给所有人分' },
-  { value: 'take_prev', label: '吃上家分' },
-  { value: 'give_prev', label: '给上家分' },
-  { value: 'take_custom', label: '吃指定玩家分' },
-  { value: 'give_custom', label: '给指定玩家分' },
-];
+import PageNav from '../../components/PageNav.vue';
 
 const router = useRouter();
 const name = ref('');
@@ -23,21 +16,20 @@ const targetType = ref<TargetType>('take_all');
 const isNextRound = ref(true);
 const isDropdownOpen = ref(false);
 
-const currentOption = computed(() => OPTIONS.find((o) => o.value === targetType.value));
-const canSave = computed(() => name.value.trim().length > 0 && Number.isFinite(score.value));
+const canSave = computed(() => name.value.trim().length > 0 && isValidScore(score.value));
 
-const selectOption = (val: string) => {
-  targetType.value = val as TargetType;
+const selectOption = (val: TargetType) => {
+  targetType.value = val;
   isDropdownOpen.value = false;
 };
 
 const save = async () => {
   if (!name.value.trim()) return appAlert('请输入规则名称', '提示');
-  if (!Number.isFinite(score.value)) return appAlert('请输入有效分数', '提示');
+  if (!isValidScore(score.value)) return appAlert('分值需为 1–999 的整数', '提示');
   gameStore.addEvent({
-    id: Date.now().toString(),
+    id: newId('e'),
     name: name.value.trim(),
-    score: Math.trunc(score.value),
+    score: score.value,
     targetType: targetType.value,
     isNextRound: isNextRound.value,
   });
@@ -47,62 +39,66 @@ const save = async () => {
 
 <template>
   <div class="page">
-    <header class="nav-bar">
-      <div class="nav-side">
-        <button class="text-btn" @click="router.back()">取消</button>
-      </div>
-      <div class="nav-title">新建规则</div>
-      <div class="nav-side right">
-        <button class="text-btn strong" :disabled="!canSave" @click="save">保存</button>
-      </div>
-    </header>
+    <PageNav title="新建规则" :back="false">
+      <template #left>
+        <button class="text-btn muted" @click="router.back()">取消</button>
+      </template>
+      <template #right>
+        <button class="text-btn" :disabled="!canSave" @click="save">保存</button>
+      </template>
+    </PageNav>
 
     <div class="scroll">
-      <div class="card form">
-        <div class="cell">
-          <label>规则名称</label>
-          <input v-model="name" class="input" placeholder="例如：大金" maxlength="10" />
+      <div class="content">
+        <div class="card form">
+          <div class="field">
+            <label class="field-label" for="event-name">规则名称</label>
+            <input id="event-name" v-model="name" class="input" placeholder="例如：大金" maxlength="10" />
+          </div>
+
+          <div class="field cell-menu">
+            <label class="field-label">记分方式</label>
+            <button class="select" @click="isDropdownOpen = !isDropdownOpen">
+              <span>{{ TARGET_LABELS[targetType] }}</span>
+              <AppIcon name="chevron-down" :size="18" :class="{ rotate: isDropdownOpen }" />
+            </button>
+            <transition name="fade">
+              <div v-if="isDropdownOpen" class="menu">
+                <button
+                  v-for="opt in TARGET_OPTIONS"
+                  :key="opt.value"
+                  class="menu-item"
+                  :class="{ on: opt.value === targetType }"
+                  @click.stop="selectOption(opt.value)"
+                >
+                  <span>{{ opt.label }}</span>
+                  <AppIcon v-if="opt.value === targetType" name="check" :size="16" :stroke="2.4" />
+                </button>
+              </div>
+            </transition>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="event-score">分数变动</label>
+            <input id="event-score" v-model.number="score" type="number" min="1" max="999" step="1" class="input num" />
+            <span class="field-hint">
+              1–999 的整数。吃/给所有人分时，每位对手各变动此分值。
+            </span>
+          </div>
         </div>
 
-        <div class="cell split">
-          <label>记分方式</label>
-          <button class="select" @click="isDropdownOpen = !isDropdownOpen">
-            <span>{{ currentOption?.label }}</span>
-            <AppIcon name="chevron-down" :size="18" :class="{ rotate: isDropdownOpen }" />
-          </button>
-          <transition name="fade">
-            <div v-if="isDropdownOpen" class="menu">
-              <button
-                v-for="opt in OPTIONS"
-                :key="opt.value"
-                class="menu-item"
-                :class="{ on: opt.value === targetType }"
-                @click.stop="selectOption(opt.value)"
-              >
-                <span>{{ opt.label }}</span>
-                <AppIcon v-if="opt.value === targetType" name="check" :size="16" :stroke="2.4" />
-              </button>
-            </div>
-          </transition>
-        </div>
-
-        <div class="cell">
-          <label>分数变动</label>
-          <input v-model.number="score" type="number" min="1" class="input num" />
+        <div class="switch-row" @click="isNextRound = !isNextRound">
+          <div>
+            <div class="switch-title">换轮并重新洗牌</div>
+            <div class="switch-sub">开启后，触发该规则会进入下一轮</div>
+          </div>
+          <div class="switch" :class="{ on: isNextRound }"><span class="knob"></span></div>
         </div>
       </div>
+    </div>
 
-      <div class="switch-row" @click="isNextRound = !isNextRound">
-        <div>
-          <div class="switch-title">换轮并重新洗牌</div>
-          <div class="switch-sub">开启后，触发该规则会进入下一轮</div>
-        </div>
-        <div class="switch" :class="{ on: isNextRound }">
-          <span class="knob"></span>
-        </div>
-      </div>
-
-      <div class="bottom-bar">
+    <div class="bottom-bar">
+      <div class="content">
         <button class="btn btn-primary btn-block" :disabled="!canSave" @click="save">
           <AppIcon name="check" :size="19" />
           <span>保存规则</span>
@@ -116,53 +112,25 @@ const save = async () => {
 
 <style scoped>
 .form {
-  margin: var(--s2) var(--s4) var(--s5);
+  margin-top: var(--s2);
   overflow: visible;
 }
-.cell {
+.cell-menu {
   position: relative;
-  padding: var(--s3) var(--s4);
-}
-.cell + .cell {
-  border-top: 1px solid var(--border);
-}
-.cell.split {
   overflow: visible;
   z-index: 5;
-}
-.cell label {
-  display: block;
-  font-size: var(--f-sm);
-  color: var(--text-2);
-  margin-bottom: var(--s2);
-}
-.input {
-  width: 100%;
-  height: 34px;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-1);
-  font-size: var(--f-md);
-  font-weight: 500;
-}
-.input::placeholder {
-  color: var(--text-3);
-}
-.input.num {
-  font-variant-numeric: tabular-nums;
 }
 .select {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 34px;
+  min-height: 40px;
   border: none;
   background: transparent;
   color: var(--text-1);
   font-size: var(--f-md);
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
 }
 .select :deep(.app-icon) {
@@ -191,7 +159,7 @@ const save = async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 44px;
+  min-height: 44px;
   padding: 0 var(--s3);
   border: none;
   border-radius: var(--r-sm);
@@ -205,15 +173,14 @@ const save = async () => {
 }
 .menu-item.on {
   color: var(--primary);
-  font-weight: 600;
+  font-weight: 650;
 }
-
 .switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s4);
-  margin: 0 var(--s4);
+  margin-top: var(--s5);
   padding: var(--s4);
   border-radius: var(--r-md);
   background: var(--surface-1);
@@ -221,47 +188,16 @@ const save = async () => {
 }
 .switch-title {
   font-size: var(--f-base);
-  font-weight: 600;
+  font-weight: 650;
 }
 .switch-sub {
   margin-top: 2px;
   font-size: var(--f-sm);
   color: var(--text-2);
 }
-.switch {
-  width: 51px;
-  height: 31px;
-  border-radius: var(--r-full);
-  background: var(--surface-3);
-  position: relative;
-  flex: none;
-  transition: background var(--d2) var(--ease);
-}
-.switch.on {
-  background: var(--success);
-}
-.knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 27px;
-  height: 27px;
-  border-radius: var(--r-full);
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  transition: transform var(--d2) var(--ease);
-}
-.switch.on .knob {
-  transform: translateX(20px);
-}
-
 .mask {
   position: fixed;
   inset: 0;
   z-index: 4;
-}
-.bottom-bar {
-  margin-top: var(--s6);
-  border-top: none;
 }
 </style>

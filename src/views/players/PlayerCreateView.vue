@@ -3,7 +3,9 @@ import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { gameStore } from '../../store';
 import { getRandomColor, AVATAR_COLORS } from '../../utils/avatar';
+import { newId } from '../../utils/id';
 import AppIcon from '../../components/AppIcon.vue';
+import PageNav from '../../components/PageNav.vue';
 import PlayerAvatar from '../../components/PlayerAvatar.vue';
 
 const router = useRouter();
@@ -15,12 +17,10 @@ const existing = editId ? gameStore.savedPlayers.find((p) => p.id === editId) : 
 const isEdit = !!existing;
 
 const name = ref(existing?.name ?? '');
-// 只生成一次：写在模板里会每次重渲染都换色，输入时头像会闪烁
+// 只生成一次：写在模板里会每次重渲染都换色
 const color = ref(existing?.avatarColor ?? getRandomColor());
-
 const canSave = computed(() => name.value.trim().length > 0);
 
-// 点头像换个颜色：比给一整排色块更省地方，也更好玩
 const cycleColor = () => {
   const i = AVATAR_COLORS.indexOf(color.value);
   color.value = AVATAR_COLORS[(i + 1) % AVATAR_COLORS.length];
@@ -32,7 +32,7 @@ const save = () => {
   if (isEdit) {
     gameStore.updateSavedPlayer(editId, { name: value, avatarColor: color.value });
   } else {
-    gameStore.addSavedPlayer({ id: `u_${Date.now()}`, name: value, avatarColor: color.value });
+    gameStore.addSavedPlayer({ id: newId('u'), name: value, avatarColor: color.value });
   }
   router.back();
 };
@@ -40,41 +40,45 @@ const save = () => {
 
 <template>
   <div class="page">
-    <header class="nav-bar">
-      <div class="nav-side">
-        <button class="text-btn" @click="router.back()">取消</button>
-      </div>
-      <div class="nav-title">{{ isEdit ? '编辑玩家' : '新建玩家' }}</div>
-      <div class="nav-side right">
-        <button class="text-btn strong" :disabled="!canSave" @click="save">保存</button>
-      </div>
-    </header>
+    <PageNav :title="isEdit ? '编辑玩家' : '新建玩家'" :back="false">
+      <template #left>
+        <button class="text-btn muted" @click="router.back()">取消</button>
+      </template>
+      <template #right>
+        <button class="text-btn" :disabled="!canSave" @click="save">保存</button>
+      </template>
+    </PageNav>
 
     <div class="scroll">
-      <section class="preview">
-        <button class="avatar-btn" @click="cycleColor" :aria-label="'更换头像颜色'">
-          <PlayerAvatar :name="name || '?'" :color="color" :size="76" />
-          <span class="avatar-badge">
-            <AppIcon name="repeat" :size="13" />
-          </span>
-        </button>
-        <p class="preview-hint">
-          {{ isEdit ? '写下昵称，点头像可以换颜色' : '写下昵称，头像会自动生成' }}
-        </p>
-      </section>
+      <div class="content">
+        <section class="preview">
+          <button class="avatar-btn" @click="cycleColor" aria-label="更换头像颜色">
+            <PlayerAvatar :name="name || '?'" :color="color" :size="80" />
+            <span class="avatar-badge"><AppIcon name="repeat" :size="13" /></span>
+          </button>
+          <p class="preview-hint">写下昵称，点头像可以换颜色</p>
+        </section>
 
-      <div class="card field">
-        <input
-          v-model="name"
-          class="input"
-          placeholder="请输入玩家昵称"
-          autofocus
-          maxlength="12"
-          @keyup.enter="save"
-        />
+        <div class="card">
+          <div class="field">
+            <label class="field-label" for="player-name">玩家昵称</label>
+            <input
+              id="player-name"
+              v-model="name"
+              class="input"
+              placeholder="请输入玩家昵称"
+              maxlength="12"
+              autofocus
+              @keyup.enter="save"
+            />
+            <span class="field-hint">最多 12 个字，头像取名字最后一个字或首字母</span>
+          </div>
+        </div>
       </div>
+    </div>
 
-      <div class="bottom-bar">
+    <div class="bottom-bar">
+      <div class="content">
         <button class="btn btn-primary btn-block" :disabled="!canSave" @click="save">
           <AppIcon name="check" :size="19" />
           <span>{{ isEdit ? '保存修改' : '保存玩家' }}</span>
@@ -107,8 +111,8 @@ const save = () => {
   position: absolute;
   right: -2px;
   bottom: -2px;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--r-full);
   background: var(--surface-solid);
   border: 1px solid var(--border);
@@ -121,26 +125,5 @@ const save = () => {
   margin-top: var(--s4);
   font-size: var(--f-sm);
   color: var(--text-3);
-}
-.field {
-  margin: 0 var(--s4);
-  padding: var(--s1) var(--s4);
-}
-.input {
-  width: 100%;
-  height: 54px;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-1);
-  font-size: var(--f-md);
-  font-weight: 500;
-}
-.input::placeholder {
-  color: var(--text-3);
-}
-.bottom-bar {
-  margin-top: var(--s6);
-  border-top: none;
 }
 </style>
