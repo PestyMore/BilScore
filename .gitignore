@@ -67,3 +67,6 @@ __pycache__/
 
 
 *.log
+
+# CI 构建前修补 iOS 工程的脚本需要入库（上面的 *.py 会误伤）
+!scripts/patch-ios-project.py

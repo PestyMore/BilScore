@@ -49,11 +49,25 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      # setup-android@v3 内部会执行 `sdkmanager tools`，而新版 cmdline-tools 已移除
+      # 这个废弃包并以退出码 1 失败。runner 自带 SDK，这里直接安装编译真正需要的组件。
       - name: Setup Android SDK / NDK
-        uses: android-actions/setup-android@v3
-        with:
-          # 与本地 D:\AndroidDev\Sdk\ndk\29.0.14206865 保持一致，避免工具链漂移
-          ndk-version: 29.0.14206865
+        run: |
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SM=$(find "$SDK/cmdline-tools" -path '*/bin/sdkmanager' -type f -print -quit)
+          if [ -z "$SM" ]; then
+            echo "::error::未找到 sdkmanager"
+            exit 1
+          fi
+          yes | "$SM" --licenses > /dev/null 2>&1 || true
+          "$SM" --install "platform-tools" "platforms;android-36"
+          # NDK 单独装：部分 runner 已预装或由 Gradle 自行解析，失败不直接中断
+          "$SM" --install "ndk;29.0.14206865" || echo "::warning::NDK 未通过 sdkmanager 安装，交由 Gradle 解析"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          if [ -d "$SDK/ndk/29.0.14206865" ]; then
+            echo "ANDROID_NDK_HOME=$SDK/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          fi
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4

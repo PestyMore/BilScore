@@ -1,3 +1,19 @@
+## v2.0.1（2026-11-06）· CI 构建修复
+
+> 依据 `v2.0.0` 的 GitHub Actions 日志（`log.txt`，读完已删除）；对应计划条目 `CP-10`。
+
+### CP-10 · 双端构建失败修复
+
+- **iOS**：`Ld` 阶段 `Undefined symbols for architecture arm64: __swift_FORCE_LOAD_$_swiftCompatibility56 / ...Concurrency`。根因：Xcode 26 / iOS 26 SDK 下，`libapp.a` 内 Swift 对象强引用的兼容库只存在于 toolchain 的 `usr/lib/swift/iphoneos`，而 `tauri ios init` 生成的工程默认不搜索该目录（日志的 `-L` 里只有 SDK 的 `usr/lib/swift` 和两个不存在的 cryptex 路径）。
+  - 新增 `scripts/patch-ios-project.py`：构建前给生成的 `project.pbxproj` 每个 `buildSettings` 块注入或合并 `LIBRARY_SEARCH_PATHS`（保留 `$(inherited)`，追加 `$(TOOLCHAIN_DIR)/usr/lib/swift/iphoneos`、`swift-5.0/iphoneos`、`$(SDKROOT)/usr/lib/swift`），注入失败时让 CI 明确失败。
+  - workflow 优先选用 runner 预装的 Xcode 16（写 `DEVELOPER_DIR`），绕开 Xcode 26 的 `SwiftUICore` 隐式链接限制；找不到时由脚本兜底。
+  - 未签名 IPA 打包：优先在 DerivedData 的 `release-iphoneos` 下找 `.app`（日志证实产物位置），并清除 `_CodeSignature` / `embedded.mobileprovision`，交给本地签名工具重签。
+- **Android**：`android-actions/setup-android@v3` 内部执行 `sdkmanager tools`，新版 cmdline-tools 已移除该废弃包并返回退出码 1，构建根本没开始。移除该 action，改用 runner 自带的 `sdkmanager` 显式安装 `platform-tools` / `platforms;android-36` / `ndk;29.0.14206865`，并导出 `ANDROID_HOME` / `ANDROID_NDK_HOME`。
+- 版本号同步 `2.0.1`（`package.json`、`tauri.conf.json`、`Cargo.toml`、Android 生成快照）；新 tag `v2.0.1` 重新触发双端构建。
+- 验证：仅静态检查（版本号一致、注入脚本语法、YAML 结构）。本次未改前端代码，按 `DOCS.md` 的编译预算不再跑本机构建。
+
+---
+
 ## v2.0.0（2026-11-06）· 产品重构：Felt Table + 全尺寸适配
 
 > 制度依据：`DOCS.md`；计划依据：`CHANGEPLAN.md`。按 `CP-01 ~ CP-08` 逐项回填，一条 CP 一条记录。

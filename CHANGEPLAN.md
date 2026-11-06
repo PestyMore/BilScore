@@ -149,6 +149,18 @@
 | 未签名 IPA 产出确定性 | `.github/workflows/build-ios.yml` | `.app` 搜索有 DerivedData 回退与失败诊断 |
 | 复核前 8 个 CP 无回退 | 全仓 | 构建、冒烟、静态检查全绿 |
 
+### CP-10　双端构建失败修复　`完成`
+
+> 依据 `v2.0.0` tag 的 Actions 日志：iOS 链接期报 Swift 兼容库未定义符号，Android 在 SDK 安装阶段就失败。
+
+| 目标 | 涉及文件 | 验收标准 |
+| --- | --- | --- |
+| iOS 链接找到 Swift 兼容库 | `scripts/patch-ios-project.py`（新建）、`build-ios.yml` | 生成的 `project.pbxproj` 含 toolchain Swift 搜索路径；CI 无 `__swift_FORCE_LOAD_` 未定义符号 |
+| 避开 Xcode 26 新 SDK 限制 | `build-ios.yml` | 有 Xcode 16 时通过 `DEVELOPER_DIR` 选用 |
+| 未签名 IPA 可靠产出 | `build-ios.yml` | DerivedData 回退查找、清除签名残留、产物可供本地重签 |
+| Android 不再被废弃包卡住 | `build-android.yml` | 移除 `setup-android@v3`，显式安装 SDK / NDK |
+| 重新触发构建 | 版本号 + `v2.0.1` tag | 三处版本一致，tag 推送后双端自动重跑 |
+
 ## 五、验证策略
 
 - 本机：`npm run build`（类型检查 + 生产构建）→ `npm run smoke`（9 条路由 SSR + 图标完整性），各一次，秒级。
