@@ -129,7 +129,10 @@ jobs:
         if: ${{ inputs.sign }}
         run: npx tauri ios build --target aarch64
 
-      # 未签名路径：产出 .app 后手工打成 IPA，供本地签名工具侧载
+      # 未签名路径：产出 .app 后手工打成 IPA，供本地签名工具侧载。
+      # Tauri CLI 在 build 成功后还会执行 xcodebuild -exportArchive，未签名的
+      # Archive 没有 development team 必然报 "No Team Found in Archive"（exit 70）。
+      # 这一步失败不代表构建失败，只要 .app 已生成就继续手工打包。
       - name: Build App (unsigned)
         if: ${{ !inputs.sign }}
         env:
@@ -142,12 +145,28 @@ jobs:
           sed -i '' 's/CODE_SIGN_IDENTITY = ".*";/CODE_SIGN_IDENTITY = "";/g' project.pbxproj
           sed -i '' 's/DEVELOPMENT_TEAM = ".*";/DEVELOPMENT_TEAM = "";/g' project.pbxproj
           cd "$GITHUB_WORKSPACE"
-          npx tauri ios build --target aarch64
+          if npx tauri ios build --target aarch64; then
+            echo "Tauri 构建与导出均成功"
+          else
+            APP=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path "*release-iphoneos/*.app" -print -quit 2>/dev/null || true)
+            if [ -n "$APP" ] && [ -f "$APP/Info.plist" ] && [ -f "$APP/bilscore" ]; then
+              echo "::notice::exportArchive 需要 development team，未签名构建按预期跳过导出；.app 已生成"
+              echo "APP_FALLBACK=$APP" >> "$GITHUB_ENV"
+            else
+              echo "::error::构建失败且没有生成可用的 .app"
+              echo "--- DerivedData 产物（诊断用）---"
+              find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 5 -type d -name "*.app" | head -n 20
+              exit 1
+            fi
+          fi
 
       - name: Package IPA
         run: |
-          # xcodebuild 的产物在 DerivedData，不一定落在 gen/apple 下
-          APP_PATH=$(find src-tauri/gen/apple -type d -name "*.app" ! -path "*Debug*" -print -quit)
+          # 未签名路径下上一步已记录 DerivedData 里的 .app，优先直接用
+          APP_PATH=${APP_FALLBACK:-}
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find src-tauri/gen/apple -type d -name "*.app" ! -path "*Debug*" -print -quit)
+          fi
           if [ -z "$APP_PATH" ]; then
             APP_PATH=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path "*release-iphoneos/*.app" -print -quit 2>/dev/null || true)
           fi

@@ -173,6 +173,17 @@
 | 避开 Xcode 26 镜像缺陷 | `build-ios.yml` | runner 固定 `macos-15`，Xcode 16/15 优先 |
 | 重新触发构建 | 版本号 + `v2.0.2` tag | tag 推送后双端自动重跑 |
 
+### CP-12　跳过必然失败的 exportArchive　`完成`
+
+> 完整日志显示 build 已成功，失败发生在 Tauri CLI 追加的签名导出阶段。
+
+| 目标 | 涉及文件 | 验收标准 |
+| --- | --- | --- |
+| 导出失败不再判死构建 | `build-ios.yml` | 捕获退出码，校验 `.app` 完整后继续 |
+| 未签名 IPA 可靠产出 | `build-ios.yml` | `APP_FALLBACK` 优先，打包与清理逻辑不变 |
+| 保留已生效的链接修复 | 全仓 | 不回退 Xcode 16 / iOS 16 / 绝对路径三层 |
+| 重新触发构建 | 版本号 + `v2.0.3` tag | tag 推送后双端自动重跑 |
+
 ## 五、验证策略
 
 - 本机：`npm run build`（类型检查 + 生产构建）→ `npm run smoke`（9 条路由 SSR + 图标完整性），各一次，秒级。

@@ -1,3 +1,18 @@
+## v2.0.3（2026-11-06）· 未签名 IPA 导出
+
+> 依据 `v2.0.2` 的**完整** Actions 日志（`log.txt`，读完已删除）；对应计划条目 `CP-12`。
+
+### CP-12 · 跳过必然失败的 exportArchive
+
+- 完整日志显示 **`** BUILD SUCCEEDED **`**：Xcode 16.4 / iOS 18.5 下编译、链接、`CopySwiftLibs`、`GenerateDSYMFile`、`Validate`、`Touch` 全部通过，前几轮的 Swift 兼容库修复已经生效，`.app` 完整生成在 `DerivedData/.../Build/Products/release-iphoneos/`。之前几份日志被网页截断，误判了失败阶段。
+- 真正失败点在 Tauri CLI 构建成功后自动追加的 `xcodebuild -exportArchive`：未签名 Archive 没有 development team → `error: exportArchive No Team Found in Archive` → `** EXPORT FAILED **` → exit 70。这一步是为了产出签名 IPA，对「未签名 IPA + 本地 Sideloadly 重签」既多余又必然失败。
+- 修复：`Build App (unsigned)` 用 `if ...; then ... else ... fi` 捕获导出失败，校验 DerivedData 里的 `.app` 含 `Info.plist` 与可执行文件后把路径写入 `APP_FALLBACK` 继续；只有 `.app` 不存在才真正失败并打印产物诊断。`Package IPA` 优先使用 `APP_FALLBACK`，其余回退查找保持不变。
+- 保留前三轮的 Xcode 16 / iOS 16 部署目标 / 兼容库绝对路径修复（已证明能让链接通过）；未签名 IPA 的签名残留清理不变。
+- 版本号同步 `2.0.3`，新 tag `v2.0.3` 重新触发构建。
+- 验证：静态检查（YAML 结构、版本号一致）；未改前端代码，按 `DOCS.md` 编译预算不跑本机构建。
+
+---
+
 ## v2.0.2（2026-11-06）· iOS 链接失败再修复
 
 > 依据 `v2.0.1` 的 Actions 日志（`log.txt`，读完已删除）；对应计划条目 `CP-11`。
