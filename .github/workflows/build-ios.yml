@@ -26,22 +26,24 @@ permissions:
 jobs:
   build-ios:
     name: iOS (${{ inputs.mode || 'public' }})
-    runs-on: macos-latest
+    # macOS 26 / Xcode 26 镜像的 Swift 库搜索路径指向未挂载的 cryptex，
+    # 且 iOS 26 SDK 对生成工程有 SwiftUICore 隐式链接限制；固定到 15 镜像。
+    runs-on: macos-15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Xcode 26 / iOS 26 SDK 把 Swift 兼容库移出了默认链接搜索路径，还引入了
-      # SwiftUICore 隐式链接限制。runner 若预装 Xcode 16 就优先用它，避免踩新 SDK 的坑。
+      # Xcode 26 / iOS 26 SDK 的默认 Swift 库搜索路径指向 runner 上未挂载的
+      # cryptex，还会隐式链接 SwiftUICore。runner 若预装 Xcode 16 / 15 就优先用。
       - name: Select a Tauri-compatible Xcode
         run: |
-          XCODE=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort | tail -n 1)
+          XCODE=$(ls -d /Applications/Xcode_16*.app /Applications/Xcode_15*.app 2>/dev/null | sort | tail -n 1)
           if [ -n "$XCODE" ]; then
             echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
             echo "使用 $XCODE"
           else
-            echo "::warning::runner 未预装 Xcode 16，沿用默认 Xcode；由下一步注入 Swift 库搜索路径兜底"
+            echo "::warning::runner 未预装 Xcode 16/15，沿用默认 Xcode"
           fi
 
       - name: Setup Node
@@ -70,8 +72,30 @@ jobs:
       - name: Init Tauri iOS
         run: npx tauri ios init
 
-      # libapp.a 里的 Swift 对象强引用 libswiftCompatibility56 / Concurrency，
-      # 链接器需要在 toolchain 的 usr/lib/swift/iphoneos 下找到它们。
+      # 链接器报 __swift_FORCE_LOAD_$_swiftCompatibility* 未定义时的双保险：
+      # 1) 把 toolchain 里的兼容库复制到工程已有的 Externals/arm64/release（已在 -L 中）
+      # 2) 把库所在绝对路径导出，下一步注入 LIBRARY_SEARCH_PATHS
+      - name: Stage Swift compatibility libraries
+        run: |
+          DEV=${DEVELOPER_DIR:-$(xcode-select -p)}
+          DST=src-tauri/gen/apple/Externals/arm64/release
+          mkdir -p "$DST"
+          FIRST=""
+          COUNT=0
+          while IFS= read -r lib; do
+            [ -z "$lib" ] && continue
+            cp -f "$lib" "$DST/"
+            [ -z "$FIRST" ] && FIRST="$lib"
+            COUNT=$((COUNT+1))
+          done < <(find "$DEV" -type f -name 'libswiftCompatibility*.a' -path '*iphoneos*' 2>/dev/null)
+          echo "已暂存 $COUNT 个 Swift 兼容库"
+          if [ -n "$FIRST" ]; then
+            echo "SWIFT_COMPAT_DIR=$(dirname "$FIRST")" >> "$GITHUB_ENV"
+          else
+            echo "::warning::未找到 Swift 兼容库；部署目标已提高，交由链接阶段验证"
+          fi
+
+      # $(TOOLCHAIN_DIR) 在 Xcode 26 会展开成不存在的 cryptex 路径，必须注入绝对路径
       - name: Patch Swift compatibility library search paths
         run: python3 scripts/patch-ios-project.py
 

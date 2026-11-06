@@ -1,3 +1,20 @@
+## v2.0.2（2026-11-06）· iOS 链接失败再修复
+
+> 依据 `v2.0.1` 的 Actions 日志（`log.txt`，读完已删除）；对应计划条目 `CP-11`。
+
+### CP-11 · iOS Swift 兼容库链接（第二次）
+
+- 上一轮的注入**确实生效了**，但 `$(TOOLCHAIN_DIR)` 在 Xcode 26 里展开成 runner 上未挂载的 `/var/run/.../Metal.xctoolchain/...` cryptex 路径：日志里 `Ld` 的 `-L` 全是这些不存在的目录，所以链接器仍找不到 `libswiftCompatibility56.a` / `libswiftCompatibilityConcurrency.a`，`__swift_FORCE_LOAD_$_*` 依旧未定义。
+- 改为**绝对路径 + 实体暂存**双保险：
+  - 新增 `Stage Swift compatibility libraries`：在选中的 Xcode Developer 目录下 `find` 出 `libswiftCompatibility*.a`，复制到工程已有且已在 `-L` 中的 `Externals/arm64/release`，并把库所在绝对目录导出为 `SWIFT_COMPAT_DIR`。
+  - `scripts/patch-ios-project.py` 改为注入该绝对路径（保留 `$(inherited)` 与 `$(SDKROOT)/usr/lib/swift`），不再使用会展开错的 `$(TOOLCHAIN_DIR)`。
+- 从源头减少符号：`bundle.iOS.minimumSystemVersion` 14.0 → **16.0**，让本次 swiftc 编译 Tauri 的 Swift 绑定时不再为旧系统 back-deploy Swift 5.6 / concurrency 兼容库。产物要求设备 iOS 16+。
+- runner 从 `macos-latest`（实际是 macOS 26 / Xcode 26 镜像）固定为 `macos-15`，Xcode 选择扩展到 15.x / 16.x：生成工程回到成熟工具链，绝对路径与兼容库暂存作为兜底。未签名 IPA 的打包与清理逻辑不变。
+- 版本号同步 `2.0.2`，新 tag `v2.0.2` 重新触发构建。
+- 验证：本地静态检查（注入脚本对两种工程格式、版本号一致性）；本次未改前端代码，按 `DOCS.md` 编译预算不跑本机构建。
+
+---
+
 ## v2.0.1（2026-11-06）· CI 构建修复
 
 > 依据 `v2.0.0` 的 GitHub Actions 日志（`log.txt`，读完已删除）；对应计划条目 `CP-10`。

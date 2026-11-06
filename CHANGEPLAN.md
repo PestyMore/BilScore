@@ -161,6 +161,18 @@
 | Android 不再被废弃包卡住 | `build-android.yml` | 移除 `setup-android@v3`，显式安装 SDK / NDK |
 | 重新触发构建 | 版本号 + `v2.0.1` tag | 三处版本一致，tag 推送后双端自动重跑 |
 
+### CP-11　iOS Swift 兼容库链接（第二次）　`完成`
+
+> `v2.0.1` 日志显示 `$(TOOLCHAIN_DIR)` 在 Xcode 26 展开为未挂载 cryptex 路径，上一轮修复落空。
+
+| 目标 | 涉及文件 | 验收标准 |
+| --- | --- | --- |
+| 不再依赖会展开错的变量 | `scripts/patch-ios-project.py` | 只注入 CI 探测到的绝对路径 |
+| 兼容库对链接器可见 | `build-ios.yml` | 复制到 `Externals/arm64/release` 且绝对路径进 `LIBRARY_SEARCH_PATHS` |
+| 从源头减少 force-load 符号 | `src-tauri/tauri.conf.json` | iOS 部署目标 16.0 |
+| 避开 Xcode 26 镜像缺陷 | `build-ios.yml` | runner 固定 `macos-15`，Xcode 16/15 优先 |
+| 重新触发构建 | 版本号 + `v2.0.2` tag | tag 推送后双端自动重跑 |
+
 ## 五、验证策略
 
 - 本机：`npm run build`（类型检查 + 生产构建）→ `npm run smoke`（9 条路由 SSR + 图标完整性），各一次，秒级。
