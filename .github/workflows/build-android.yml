@@ -20,8 +20,13 @@ permissions:
 
 jobs:
   android:
-    name: Android (${{ inputs.mode || 'public' }})
+    name: Android (${{ matrix.mode }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # tag 构建一次产出两版；手动触发只跑所选的那一版
+      matrix:
+        mode: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.mode) || '["public","personal"]') }}
 
     steps:
       - name: Checkout
@@ -38,10 +43,12 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
+      # 两个 mode 的 Rust 产物完全一致，共享缓存避免重复编译
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'src-tauri -> target'
+          shared-key: bilscore-android-release
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -77,51 +84,110 @@ jobs:
 
       # Vite 只从 .env 文件读取 VITE_* 变量，直接写 env: 无效，必须落盘
       - name: Write Build Mode
-        run: echo "VITE_APP_MODE=${{ inputs.mode || 'public' }}" > .env
+        run: echo "VITE_APP_MODE=${{ matrix.mode }}" > .env
 
-      - name: Inject Signing Key
+      - name: Check signing secret
+        id: sig
+        env:
+          KS_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS_BASE64" ]; then
+            echo "has_secret=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secret=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 未配置正式签名时，缓存自签名密钥，保证后续版本可以直接覆盖安装而不丢本地数据
+      - name: Restore self-signed keystore
+        if: steps.sig.outputs.has_secret == 'false'
+        id: ks
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/gen/android/app/bilscore.jks
+          key: bilscore-selfsigned-keystore-v1
+
+      - name: Prepare release signing
         env:
           KS_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KS_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          HAS_SECRET: ${{ steps.sig.outputs.has_secret }}
+          KS_HIT: ${{ steps.ks.outputs.cache-hit }}
         run: |
-          if [ -n "$KS_BASE64" ]; then
-            echo "$KS_BASE64" | base64 -d > src-tauri/gen/android/app/bilscore.jks
-            cat > src-tauri/gen/android/key.properties <<EOF
-          storePassword=$KS_PASSWORD
-          keyPassword=$KEY_PASSWORD
-          keyAlias=$KEY_ALIAS
+          APP=src-tauri/gen/android/app
+          mkdir -p "$APP"
+          if [ "$HAS_SECRET" = "true" ]; then
+            echo "$KS_BASE64" | base64 -d > "$APP/bilscore.jks"
+            STORE_PASS="$KS_PASSWORD"
+            KEY_PASS="$KEY_PASSWORD"
+            ALIAS="$KEY_ALIAS"
+            echo "使用仓库 Secret 中的签名"
+          else
+            STORE_PASS="bilscore-release"
+            KEY_PASS="bilscore-release"
+            ALIAS="bilscore"
+            if [ "$KS_HIT" != "true" ] || [ ! -f "$APP/bilscore.jks" ]; then
+              echo "生成自签名密钥"
+              keytool -genkeypair -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
+                -keystore "$APP/bilscore.jks" -storepass "$STORE_PASS" -keypass "$KEY_PASS" \
+                -dname "CN=BilScore, OU=Mobile, O=BilScore, L=NA, ST=NA, C=US" > /dev/null 2>&1 \
+                || { echo "::error::生成自签名密钥失败"; exit 1; }
+            else
+              echo "复用缓存中的自签名密钥（可覆盖安装）"
+            fi
+          fi
+          cat > src-tauri/gen/android/key.properties <<EOF
+          storePassword=$STORE_PASS
+          keyPassword=$KEY_PASS
+          keyAlias=$ALIAS
           storeFile=bilscore.jks
           EOF
-            echo "已注入签名配置"
-          else
-            echo "未检测到 ANDROID_KEYSTORE_BASE64，将输出未签名包"
-          fi
 
-      # APK 与 AAB 一次编译产出，避免 tag 构建把整个 Rust/Gradle 流程跑两遍
-      - name: Build APK (and AAB on tag)
+      # 只出 APK：AAB 仅供应用商店，本项目直接分发 APK；--split-per-abi 让每个包只带一个架构
+      - name: Build APK
+        run: npx tauri android build --apk --split-per-abi
+
+      # 只把真机架构的可安装包送进 Release，x86 系列留在 artifact 供调试
+      - name: Collect distributable APKs
+        env:
+          TAG: ${{ github.ref_name }}
+          MODE: ${{ matrix.mode }}
         run: |
-          if [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
-            npx tauri android build --apk --aab --split-per-abi
-          else
-            npx tauri android build --apk --split-per-abi
+          APK_DIR=src-tauri/gen/android/app/build/outputs/apk
+          OUT=dist-release
+          mkdir -p "$OUT"
+          copy_apk() {
+            abi="$1"; label="$2"
+            src=$(find "$APK_DIR" -type f -name "app-${abi}-release*.apk" ! -name "*unaligned*" -print -quit 2>/dev/null || true)
+            if [ -z "$src" ]; then
+              echo "::warning::未找到 ${label} 版 APK"
+              return
+            fi
+            cp "$src" "$OUT/BilScore-${TAG}-${MODE}-${label}.apk"
+            echo "${label}: $(du -h "$src" | cut -f1)"
+          }
+          copy_apk arm64 arm64
+          copy_apk arm armv7
+          ls -lh "$OUT"
+          if [ -z "$(ls -A "$OUT")" ]; then
+            echo "::error::没有可用的 APK 产物"
+            find "$APK_DIR" -type f -name '*.apk' | head -n 20
+            exit 1
           fi
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: bilscore-android-${{ inputs.mode || 'public' }}-${{ github.ref_name }}
+          name: bilscore-android-${{ matrix.mode }}-${{ github.ref_name }}
           path: |
+            dist-release/*.apk
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk
-            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
           if-no-files-found: error
 
-      - name: Create GitHub Release
+      - name: Attach APKs to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
-            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
-          generate_release_notes: true
+          files: dist-release/*.apk
+          generate_release_notes: false

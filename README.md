@@ -1,6 +1,6 @@
 # BilScore · 台球追分计分器
 
-**Tauri 2 + Vue 3 + TypeScript** 的移动端台球计分应用，只分发 **Android APK/AAB** 与 **iOS IPA**，无网络、无账号、无后台服务。
+**Tauri 2 + Vue 3 + TypeScript** 的移动端台球计分应用，只分发 **Android APK** 与 **iOS IPA**，无网络、无账号、无后台服务。
 
 > 文档制度 [DOCS.md](./DOCS.md)　|　改造计划 [CHANGEPLAN.md](./CHANGEPLAN.md)　|　更新记录 [CHANGELOG.md](./CHANGELOG.md)　|　历史评估 [advice.md](./advice.md)
 
@@ -60,10 +60,13 @@ iOS 用 `env(safe-area-inset-*)` 处理刘海与横条；Android 由系统栏占
 | 工作流 | 触发 | 产物 |
 | --- | --- | --- |
 | `verify.yml` | push / PR / 手动 | 版本号一致性、前端构建、SSR 冒烟、Rust 单测 |
-| `build-android.yml` | 手动（选 public/personal）/ `v*` tag | APK（按 ABI 拆分），tag 时同时产出 AAB 并发 Release |
-| `build-ios.yml` | 手动（可选签名）/ `v*` tag | IPA，可签名或供 AltStore / SideStore 侧载，tag 时挂到 Release |
+| `release.yml` | `v*` tag | 先创建 Release 与下载说明（避免多个构建 job 并发建 Release） |
+| `build-android.yml` | 手动（选模式）/ `v*` tag（双模式） | 按 ABI 拆分的 APK；tag 时挑真机架构签名后挂到 Release |
+| `build-ios.yml` | 手动（选模式、可选签名）/ `v*` tag（双模式） | 未签名或签名 IPA，tag 时挂到 Release |
 
-Android 签名密钥与 Apple 证书均从仓库 Secrets 注入，不入库。iOS 未签名 IPA 可直接用你的设备侧载测试。
+每次 `v*` tag 都会构建 **public + personal 两版**：功能一致，`personal` 开箱内置常用计分规则。产物统一按 `BilScore-<版本>-<模式>-<架构>` 命名，Release 说明里写清该挑哪个。AAB 只在与应用商店对接时才需要，本项目不再产出；模拟器架构的 APK 只留在 Actions artifact 里，不进 Release。
+
+Android 若配置了 Secrets 里的正式密钥则用它签名；否则 CI 生成一个自签名密钥并用 Actions 缓存复用，APK 可直接安装且后续版本能覆盖升级。Apple 证书同样从 Secrets 注入，不入库。iOS IPA 未签名，请用 Sideloadly / AltStore 一类工具自签后侧载。
 
 ## 数据说明
 

@@ -25,10 +25,17 @@ permissions:
 
 jobs:
   build-ios:
-    name: iOS (${{ inputs.mode || 'public' }})
+    name: iOS (${{ matrix.mode }})
     # macOS 26 / Xcode 26 镜像的 Swift 库搜索路径指向未挂载的 cryptex，
     # 且 iOS 26 SDK 对生成工程有 SwiftUICore 隐式链接限制；固定到 15 镜像。
     runs-on: macos-15
+    strategy:
+      fail-fast: false
+      # tag 构建一次产出两版；手动触发只跑所选的那一版
+      matrix:
+        mode: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.mode) || '["public","personal"]') }}
+    env:
+      IPA_NAME: BilScore-${{ github.ref_name }}-${{ matrix.mode }}-${{ inputs.sign && 'signed' || 'unsigned' }}.ipa
 
     steps:
       - name: Checkout
@@ -57,17 +64,19 @@ jobs:
         with:
           targets: aarch64-apple-ios
 
+      # 两个 mode 的 Rust 产物完全一致，共享缓存避免重复编译
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'src-tauri -> target'
+          shared-key: bilscore-ios-release
 
       - name: Install Frontend Deps
         run: npm ci
 
       # Vite 只从 .env 文件读取 VITE_* 变量，直接写 env: 无效，必须落盘
       - name: Write Build Mode
-        run: echo "VITE_APP_MODE=${{ inputs.mode || 'public' }}" > .env
+        run: echo "VITE_APP_MODE=${{ matrix.mode }}" > .env
 
       - name: Init Tauri iOS
         run: npx tauri ios init
@@ -184,19 +193,19 @@ jobs:
           cp -r "$APP_PATH" Payload/
           # 未签名产物不应带任何签名材料，交给本地工具重新签
           rm -rf Payload/*/_CodeSignature Payload/*/embedded.mobileprovision
-          zip -qr bilscore.ipa Payload
-          echo "IPA 大小: $(du -h bilscore.ipa | cut -f1)"
+          zip -qr "$IPA_NAME" Payload
+          echo "IPA 大小: $(du -h "$IPA_NAME" | cut -f1)"
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bilscore-ios-${{ inputs.mode || 'public' }}-${{ inputs.sign && 'signed' || 'unsigned' }}
-          path: bilscore.ipa
+          name: bilscore-ios-${{ matrix.mode }}-${{ inputs.sign && 'signed' || 'unsigned' }}
+          path: ${{ env.IPA_NAME }}
           if-no-files-found: error
 
       - name: Attach IPA to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: bilscore.ipa
+          files: ${{ env.IPA_NAME }}
           generate_release_notes: false

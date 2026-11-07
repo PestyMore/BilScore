@@ -196,6 +196,19 @@
 | Lucide 图标替换 | `src/icons.ts`、`gen-icons.mjs`、`AppIcon.vue` | 新增 3 个图标、清单同步、描边微调 |
 | 本机验证与推送 | — | build + smoke 各 1 次全绿，`v2.0.4` tag 触发出包 |
 
+### CP-14　发布链路整理与双模式出包　`完成`
+
+> 用户 iOS 真机验收通过，转入正式发布：personal 版从未编译、Android 包观感偏大、希望自动发布 Release。
+
+| 目标 | 涉及文件 | 验收标准 |
+| --- | --- | --- |
+| 核实产物下载能力 | — | 区分「artifact 需认证」与「Release 附件公开可下载」 |
+| public + personal 双模式出包 | `build-android.yml`、`build-ios.yml` | tag 触发 4 个 job，手动触发仍只跑所选模式 |
+| Android 产物精简与清晰命名 | `build-android.yml` | 去 AAB、Release 只挂真机 ABI、按版本-模式-架构命名 |
+| APK 可直接安装 | `build-android.yml` | 正式 / 自签名密钥，缓存复用保证覆盖升级 |
+| 统一 Release 说明 | `.github/workflows/release.yml`（新建） | 先建 Release，构建 job 只追加 assets |
+| 文档与验证 | `README.md`、`CHANGELOG.md`、`CHANGEPLAN.md` | 描述与实现一致；YAML / 版本静态检查 + build + smoke |
+
 ## 五、验证策略
 
 - 本机：`npm run build`（类型检查 + 生产构建）→ `npm run smoke`（9 条路由 SSR + 图标完整性），各一次，秒级。

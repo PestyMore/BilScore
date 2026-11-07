@@ -1,3 +1,22 @@
+## v2.0.5（2026-11-07）· 发布链路整理与双模式出包
+
+> 对应计划条目 `CP-14`。
+
+### CP-14 · Release 发布整理
+
+- **能力边界核实**：`actions/artifacts/{id}/zip` 未认证返回 401，本机无 `gh` / token，Actions artifact 拉不到；但 Release 附件走公开直链可下载（实测 200），GitHub API 本轮也已恢复可用，可自行查运行状态与产物清单。**创建 / 更新 Release 需要写权限**，因此仍由 CI 的 `GITHUB_TOKEN` 完成。
+- **personal 版确实从未编译**：tag 触发时 `inputs.mode` 为空，`Write Build Mode` 一律写 `public`。两个构建工作流改为矩阵 `mode: [public, personal]`（tag 时双模式，手动触发只跑所选模式），Rust 缓存加 `shared-key` 让两版共用编译产物。
+- **「Android 包大」的真相**：实测单个 APK 只有 4.7–6.1 MB，Rust LTO / strip 与 Gradle minify 都已生效；观感来自 Release 一次挂 **9 个文件**（4 个分 ABI APK + 4 个分 ABI AAB + 1 个 IPA）。分机型打包本来就在做，问题是无用的 AAB、模拟器 ABI 和 `app-arm64-release-unsigned.apk` 这类默认文件名。
+  - 去掉 `--aab`：AAB 仅在与应用商店对接时才需要，本项目直接分发 APK。
+  - Release 只挂 arm64 / armv7 两个真机架构，x86 系列仅留在 Actions artifact。
+  - 产物统一重命名为 `BilScore-<tag>-<mode>-<abi>.apk` 与 `BilScore-<tag>-<mode>-unsigned.ipa`。
+- **修掉更实际的问题：APK 是未签名的**。原产物名全是 `-unsigned`，Android 无法直接安装。新增 `Check signing secret` → `Restore self-signed keystore`（`actions/cache` 复用，保证覆盖升级不丢 `localStorage` 数据）→ `Prepare release signing`：有正式 Secrets 就用正式密钥，否则生成并缓存自签名密钥；正式密钥不会进缓存。
+- 新增 `.github/workflows/release.yml`：tag 时先由秒级 job 创建 Release 并写入下载说明（Android 按机型选、iOS 需自签、public / personal 区别、体积说明）；两个构建工作流改为只追加 assets、`generate_release_notes: false`，消除多个 job 并发 create 同一 tag 的竞态。
+- `README.md` 打包与分发章节同步更新；版本号 `2.0.5`。
+- 验证：四条工作流 YAML 结构静态校验、三处版本号一致、`npm run build` + `npm run smoke` 各 1 次；本机未跑移动端 / Rust 编译。
+
+---
+
 ## v2.0.4（2026-11-06）· 交互反馈与图标打磨
 
 > 对应计划条目 `CP-13`。

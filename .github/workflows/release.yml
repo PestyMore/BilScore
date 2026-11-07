@@ -1,0 +1,52 @@
+name: Release
+
+# 只负责建 Release 与说明；四个构建 job 随后把产物追加进来。
+# 先由这个秒级 job 创建，避免多个构建 job 并发 create 同一 tag 时出现竞态。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  create:
+    name: Create release notes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: BilScore ${{ github.ref_name }}
+          generate_release_notes: false
+          body: |
+            ## 怎么挑文件
+
+            **Android（选一个即可）**
+
+            | 文件 | 适用 |
+            | --- | --- |
+            | `BilScore-${{ github.ref_name }}-public-arm64.apk` | 绝大多数手机 / 平板（64 位，2018 年后基本都是） |
+            | `BilScore-${{ github.ref_name }}-public-armv7.apk` | 少量 32 位老设备 |
+            | `BilScore-${{ github.ref_name }}-personal-*.apk` | 同上，但开箱内置常用计分规则 |
+
+            APK 已签名，下载后直接安装即可；系统提示「未知来源」时允许一次。
+
+            **iOS（未签名，需自行侧载）**
+
+            | 文件 | 说明 |
+            | --- | --- |
+            | `BilScore-${{ github.ref_name }}-public-unsigned.ipa` | 通用版 |
+            | `BilScore-${{ github.ref_name }}-personal-unsigned.ipa` | 内置规则版 |
+
+            IPA 未签名，请用 Sideloadly 一类工具用自己的 Apple ID 签名后安装，要求 iOS 16 或更高。
+
+            ## public 与 personal 的区别
+
+            功能完全一致，只有**初始规则**不同：`public` 需要自己新建计分规则；`personal` 开箱内置大金 / 小金 / 黄金9 / 普胜等常用规则（列表里标为「预设」）。玩家库、历史对局、已保存的规则互不影响。
+
+            ## 体积
+
+            单个 APK 约 6 MB、IPA 约 1.5 MB。已启用 Rust LTO / 符号剥离与 Android 资源压缩，只发布真机架构，不含模拟器架构，也不再产出仅供应用商店使用的 AAB。文件按「版本 - 模式 - 架构」命名，直接挑对应自己设备的那一个就够了。
